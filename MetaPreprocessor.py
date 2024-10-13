@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-import builtins, os, sys, datetime, copy, enum, types, traceback, contextlib, collections
+import builtins, os, sys, datetime, copy, types, traceback, contextlib, collections
 
 ################################################################ Meta Primitives ################################################################
 
@@ -187,7 +187,7 @@ class Meta:
 
 ################################################################ Meta-Preprocessor ################################################################
 
-def metapreprocessor(*, output_dir_path, source_file_paths, additional_context, quiet=False, noexec=False):
+def do(*, output_dir_path, source_file_paths, additional_context, quiet=False, noexec=False):
 
 	meta_decls    = []
 	meta_includes = []
@@ -247,7 +247,7 @@ def metapreprocessor(*, output_dir_path, source_file_paths, additional_context, 
 			diagnostic += f'{location_of(directive, line_offset = err_lineno - len(prepended_lines))}: {err_detail}'
 			raise Meta.Error(diagnostic)
 
-	################################################################ Get Meta-Directives ################################################################
+	################################ Get Meta-Directives ################################
 
 	for source_file_path in source_file_paths:
 
@@ -418,8 +418,7 @@ def metapreprocessor(*, output_dir_path, source_file_paths, additional_context, 
 			if not any(symbol in other.exports for other in meta_decls):
 				raise Meta.Error(f'{location_of(meta_decl)} The meta-decl depends on "{symbol}" but no meta-decl exports it.')
 
-	################################################################ Evaluate Meta-Decls ################################################################
-
+	################################ Evaluate Meta-Decls ################################
 
 	initial_context = copy.deepcopy(additional_context | { 'Meta' : Meta })
 	full_context    = copy.deepcopy(initial_context)
@@ -488,7 +487,7 @@ def metapreprocessor(*, output_dir_path, source_file_paths, additional_context, 
 	elif not quiet:
 		print('No meta-decls found.')
 
-	################################################################ Evaluate Meta-Includes ################################################################
+	################################ Evaluate Meta-Includes ################################
 
 	if meta_includes:
 

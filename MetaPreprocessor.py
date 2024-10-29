@@ -230,8 +230,9 @@ def do(*, output_dir_path, source_file_paths, additional_context, quiet=False, n
 			err_trace = traceback.format_exc()
 
 			match type(err):
-				case builtins.SyntaxError    : err_lineno = err.lineno
-				case _                       : err_lineno = [stack.lineno for stack in traceback.extract_tb(sys.exc_info()[2]) if stack.name == '__META_MAIN__'][0]
+				case builtins.SyntaxError      : err_lineno = err.lineno
+				case builtins.IndentationError : err_lineno = err.lineno
+				case _                         : err_lineno = [stack.lineno for stack in traceback.extract_tb(sys.exc_info()[2]) if stack.name == '__META_MAIN__'][0]
 
 			match type(err):
 				case Meta.Error              : err_detail = str(err)

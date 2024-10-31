@@ -439,19 +439,19 @@ def do(*, output_dir_path, source_file_paths, additional_context, quiet=False, n
 
 			for task_index, (executed, meta_decl) in enumerate(tasks):
 
-				if not quiet:
-					print(f'\t{location_of(meta_decl)} {', '.join(meta_decl.exports)}')
-
-				# Skip evaluation.
-				if noexec:
-					continue
-
 				# No need to evaluate the meta-decl again.
 				if executed:
 					continue
 
 				# There's still some unsatisfied dependencies.
 				if not all(symbol in full_context for symbol in meta_decl.imports):
+					continue
+
+				if not quiet:
+					print(f'\t{location_of(meta_decl)} {', '.join(meta_decl.exports)}')
+
+				# Skip evaluation.
+				if noexec:
 					continue
 
 				# Execute meta-decl with the necessary context.

@@ -117,7 +117,7 @@ class Meta:
 				if opening is None: opening = '{'
 				if closing is None: closing = '};'
 
-			if header.startswith('switch'):
+			if header.startswith(('switch', 'if', 'else', 'while')):
 				if opening is None: opening = '{'
 				if closing is None: closing = '}'
 

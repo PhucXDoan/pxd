@@ -187,7 +187,7 @@ class Meta:
 
 ################################################################ Meta-Preprocessor ################################################################
 
-def do(*, output_dir_path, source_file_paths, additional_context, quiet=False, noexec=False):
+def do(*, output_dir_path, source_file_paths, additional_context, quiet=False, noexec=False, output_receipt=True):
 
 	meta_decls    = []
 	meta_includes = []
@@ -490,6 +490,8 @@ def do(*, output_dir_path, source_file_paths, additional_context, quiet=False, n
 
 	################################ Evaluate Meta-Includes ################################
 
+	os.makedirs(output_dir_path, exist_ok=True) # Make output directory.
+
 	if meta_includes:
 
 		if not quiet:
@@ -519,19 +521,25 @@ def do(*, output_dir_path, source_file_paths, additional_context, quiet=False, n
 			generated   = Meta.string
 			Meta.string = ''
 
-			Meta.line(f'// {location_of(meta_include)} {datetime.datetime.now()}.') # Some info about the generated code.
+			# Some info about the generated code.
+			if output_receipt:
+				Meta.line(f'// {location_of(meta_include)} {datetime.datetime.now()}.')
 
-			if Meta.overloads: # Put any overloaded macros first.
-				Meta.line()
+			# Put any overloaded macros first.
+			if Meta.overloads:
+				if Meta.string:
+					Meta.line()
 				for macro_name, (arg_names, determiner_names, nondeterminer_names) in Meta.overloads.items():
 					Meta.macro(f'{macro_name}({', '.join(arg_names)})', f'_{macro_name}__##{'##'.join(determiner_names)}({', '.join(nondeterminer_names)})')
 
-			if generated: # Insert rest of the code that was generated.
-				Meta.line()
+			# Insert rest of the code that was generated.
+			if generated:
+				if Meta.string:
+					Meta.line()
 				Meta.line(generated)
 
-			os.makedirs(os.path.dirname(meta_include.output_file_path), exist_ok=True) # Make directory path.
-			open(meta_include.output_file_path, 'w').write(Meta.string)                # Save generated code.
+			# Save generated code.
+			open(meta_include.output_file_path, 'w').write(Meta.string)
 
 	elif not quiet:
 		print('No meta-includes found.')

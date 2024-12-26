@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-import builtins, os, sys, datetime, copy, types, traceback, contextlib, collections
+import builtins, os, sys, datetime, copy, types, traceback, contextlib, collections, re
 
 ################################################################ Meta Primitives ################################################################
 
@@ -103,31 +103,34 @@ class Meta:
 
 	@contextlib.contextmanager
 	@staticmethod
-	def enter(header, opening=None, closing=None, *, indented=None):
+	def enter(header=None, opening=None, closing=None, *, indented=None):
 
 		defining_macro = False
 
 		# Automatically configure the opening and closing lines if possible.
-		if header is not None:
 
-			if header.startswith(('#if', '#ifdef')):
-				if closing is None: closing = '#endif'
+		def match(*keywords):
+			string = fr'^\s*({'|'.join(keywords)})\b'
+			return header is not None and re.search(string, header)
 
-			if header.startswith(('struct', 'union', 'enum')):
-				if opening is None: opening = '{'
-				if closing is None: closing = '};'
+		if match('#if', '#ifdef'):
+			if closing is None: closing = '#endif'
 
-			if header.startswith(('switch', 'if', 'else', 'while')):
-				if opening is None: opening = '{'
-				if closing is None: closing = '}'
+		elif match('struct', 'union', 'enum'):
+			if opening is None: opening = '{'
+			if closing is None: closing = '};'
 
-			if header.startswith('case'):
-				if opening is None: opening  = '{'
-				if closing is None: closing  = '} break;'
+		elif match('case'):
+			if opening is None: opening  = '{'
+			if closing is None: closing  = '} break;'
 
-			if header.startswith('#define '):
-				defining_macro    = True
-				Meta.within_macro = True
+		elif match('#define'):
+			defining_macro    = True
+			Meta.within_macro = True
+
+		else:
+			if opening is None: opening = '{'
+			if closing is None: closing = '}'
 
 		# Header and opening lines.
 		if header is not None:

@@ -319,6 +319,8 @@ def do(*, output_dir_path, source_file_paths, additional_context, quiet=False, n
 
 				if tmp.startswith('#meta'): # ... with a special tag.
 					tmp = tmp.removeprefix('#meta')
+					if (index := tmp.find('//')) != -1: tmp = tmp[:index]
+					if (index := tmp.find('#' )) != -1: tmp = tmp[:index]
 					tmp = tmp.strip()
 					tmp = tmp.split(':')
 

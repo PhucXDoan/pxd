@@ -3,41 +3,144 @@ import builtins, os, sys, datetime, copy, types, traceback, contextlib, collecti
 
 ################################################################ Meta Primitives ################################################################
 
+class MetaError(Exception):
+	pass
+
 class Meta:
 
-	class Error(Exception):
-		pass
+	def __stringify(x):
+		match x:
+			case bool()  : return str(x).lower()
+			case float() : return str(int(x) if x.is_integer() else x)
+			case _       : return str(x)
+
+	def Collect(fs):
+
+		def decorator(f):
+			nonlocal fs
+			match fs:
+				case list():
+					fs += [f]
+				case dict():
+					assert f.__name__ not in fs, 'Function named `{f.__name__}` already in the collection.'
+					fs[f.__name__] = f
+			return f
+
+		return decorator
 
 	class Obj:
 
-		def __init__(self, **fields):
-			for field_name, field_value in fields.items():
-				setattr(self, field_name, field_value)
+		def __init__(self, dct=None, **fields):
+			assert dct is None or not fields, \
+				'Meta.Obj has both an argument and kwargs; likely a mistake?'
+			for key, value in (fields if dct is None else dct).items():
+				self.__dict__[key] = value
+
+		def __getattr__(self, key):
+			assert key in ('__deepcopy__', '__setstate__'), \
+				f'The Meta.Obj has no field (.{key}) to read.'
+			raise AttributeError
+
+		def __setattr__(self, key, value):
+			assert key in self.__dict__, \
+				f'The Meta.Obj has no field (.{key}) to write.'
+			self.__dict__[key] = value
 
 		def __getitem__(self, key):
-			return getattr(self, key)
+			assert key in self.__dict__, \
+				f'The Meta.Obj has no field [`{key}`] to read.'
+			return self.__dict__[key]
+
+		def __setitem__(self, key, value):
+			assert key in self.__dict__, \
+				f'The Meta.Obj has no field [`{key}`] to write.'
+			self.__dict__[key] = value
+			return value
 
 		def __iter__(self):
 			for name, value in self.__dict__.items():
 				yield (name, value)
 
 		def __repr__(self):
-			return repr(self.__dict__)
+			return f'Meta.Obj({ ', '.join(f'{k} = {v}' for k, v in self) })'
 
-	@staticmethod
-	def Table(fields, *entries):
-		assert isinstance(fields, tuple)
-		assert all(len(entry) == len(fields) for entry in entries if entry is not None)
+	class AddOn:
+
+		def __init__(self, dct=None, **fields):
+			assert dct is None or not fields, \
+				'Meta.AddOn has both an argument and kwargs; likely a mistake?'
+			for key, value in (fields if dct is None else dct).items():
+				self.__dict__[key] = value
+
+		def __getattr__(self, key):
+			assert key in ('__deepcopy__', '__setstate__'), \
+				f'The Meta.AddOn has no field (.{key}) to read.'
+			raise AttributeError
+
+		def __setattr__(self, key, value):
+			assert key not in self.__dict__, \
+				f'The Meta.AddOn has field (.{key}) already.'
+			self.__dict__[key] = value
+
+		def __getitem__(self, key):
+			assert key in self.__dict__, \
+				f'The Meta.AddOn has no field [`{key}`] to read.'
+			return self.__dict__[key]
+
+		def __setitem__(self, key, value):
+			assert key not in self.__dict__, \
+				f'The Meta.AddOn has field [`{key}`] already.'
+			self.__dict__[key] = value
+			return value
+
+		def __iter__(self):
+			for name, value in self.__dict__.items():
+				yield (name, value)
+
+		def __repr__(self):
+			return f'Meta.AddOn({ ', '.join(f'{k} = {v}' for k, v in self) })'
+
+	def Table(header, *entries):
+
+		for entry in Meta.exam(entries, lambda entry: entry is not None and not isinstance(entry, tuple)):
+			assert False, f'The Meta.Table has a non-tuple row: {entry}.'
+
+		for entry in Meta.exam(entries, lambda entry: len(entry) != len(header)):
+			assert False, \
+				f'The Meta.Table has {len(header)} columns ({', '.join(header)}), ' \
+				f'but this entry has {len(entry)}: {entry}.'
 
 		table = []
 
 		for entry in entries:
 			if entry is not None: # Allows for an entry to be easily omitted.
-				table += [Meta.Obj(**dict(zip(fields, entry)))]
+				table += [Meta.Obj(**dict(zip(header, entry)))]
 
 		return table
 
-	@staticmethod
+	def exam(values, predicate=None):
+
+		# If no predicate, check if `values` have any overlapping values.
+		if predicate is None:
+
+			match values:
+				case dict() : pairs = values.items()
+				case _      : pairs = values
+
+			history = {}
+
+			for person, birthday in pairs:
+				if birthday in history:
+					yield person
+				else:
+					history[birthday] = person
+
+		# Otherwise, find a value that satisfies the predicate.
+		else:
+			for value in values:
+				if predicate(value):
+					yield value
+
 	def line(string='\n\n'):
 
 		# Split to process each line in order to do indenting correctly for multilined input strings.
@@ -66,8 +169,7 @@ class Meta:
 			line         = '\t' * Meta.indent + line if line.strip() else ''
 			Meta.string += line + (' \\' if Meta.within_macro else '') + '\n'
 
-	@staticmethod
-	def macro(lhs, rhs, *, do_while=False):
+	def define(lhs, rhs, *, do_while=False):
 
 		if isinstance(rhs, str) and '\n' in rhs:
 			with Meta.enter(f'#define {lhs}'):
@@ -77,14 +179,13 @@ class Meta:
 				else:
 					Meta.line(rhs)
 		else:
-			expansion = (str(rhs).lower() if isinstance(rhs, bool) else str(rhs)).strip()
+			expansion = Meta.__stringify(rhs).strip()
 
 			if do_while:
 				Meta.line(f'#define {lhs} do {{ {expansion} }} while (false)')
 			else:
 				Meta.line(f'#define {lhs} {expansion}')
 
-	@staticmethod
 	def overload(macro_name, args, expansion):
 
 		arg_names                           = [arg[0] if isinstance(arg, tuple) else arg for arg in args]
@@ -97,12 +198,9 @@ class Meta:
 		else:
 			Meta.overloads[macro_name] = overload
 
-		determiner_values = [str(value).lower() if isinstance(value, bool) else str(value) for value in determiner_values]
-
-		Meta.macro(f'_{macro_name}__{'__'.join(determiner_values)}({', '.join(nondeterminer_names)})', expansion)
+		Meta.define(f'_{macro_name}__{'__'.join(map(Meta.__stringify, determiner_values))}({', '.join(nondeterminer_names)})', expansion)
 
 	@contextlib.contextmanager
-	@staticmethod
 	def enter(header=None, opening=None, closing=None, *, indented=None):
 
 		defining_macro = False
@@ -113,7 +211,7 @@ class Meta:
 			string = fr'^\s*({'|'.join(keywords)})\b'
 			return header is not None and re.search(string, header)
 
-		if match('#if', '#ifdef'):
+		if match('#if', '#ifdef', '#elif', '#else'):
 			if closing is None: closing = '#endif'
 
 		elif match('struct', 'union', 'enum'):
@@ -154,8 +252,59 @@ class Meta:
 			Meta.within_macro = False
 			Meta.line()
 
-	@staticmethod
-	def enums(enum_name, type, members, *, counted=False):
+	def ifs        (cases): return Meta.__ifs(cases, elifs=False, has_else=False, pound_if=False)
+	def IFS        (cases): return Meta.__ifs(cases, elifs=False, has_else=False, pound_if=True )
+	def if_elses   (cases): return Meta.__ifs(cases, elifs=False, has_else=True , pound_if=False)
+	def IF_ELSES   (cases): return Meta.__ifs(cases, elifs=False, has_else=True , pound_if=True )
+	def elifs      (cases): return Meta.__ifs(cases, elifs=True , has_else=False, pound_if=False)
+	def ELIFS      (cases): return Meta.__ifs(cases, elifs=True , has_else=False, pound_if=True )
+	def elifs_else (cases): return Meta.__ifs(cases, elifs=True , has_else=True , pound_if=False)
+	def ELIFS_ELSE (cases): return Meta.__ifs(cases, elifs=True , has_else=True , pound_if=True )
+	def __ifs(cases, *, elifs, has_else, pound_if):
+
+		match cases:
+			case dict()     : items = list(cases.items())
+			case Meta.Obj() : items = list(cases.__dict__.items())
+			case _          : assert False
+
+		for index, (condition, value) in enumerate(items):
+
+			# Determine header.
+			if index and elifs:
+				if pound_if : header = f'#elif {condition}'
+				else        : header = f'else if ({condition})'
+			else:
+				if pound_if : header = f'#if {condition}'
+				else        : header = f'if ({condition})'
+
+			# Suppress the default closing line if there's going to be another case.
+			closing = '' if pound_if and ((elifs and index != len(items) - 1) or has_else) else None
+
+			# Create the if-body.
+			with Meta.enter(header, None, closing):
+				yield (condition, value)
+
+			# Create the else-body if needed.
+			if not elifs and has_else:
+				if items:
+					if pound_if : header = f'#else'
+					else        : header = f'else'
+				else:
+					header = None
+				with Meta.enter(header):
+					yield (None, value)
+
+		# Create final else-body if needed.
+		if elifs and has_else:
+			if items:
+				if pound_if : header = f'#else'
+				else        : header = f'else'
+			else:
+				header = None
+			with Meta.enter(header):
+				yield (None, None)
+
+	def enums(enum_name, type, members, *, counted=False): # TODO Can be made into a contextlib.
 
 		if not members and not counted:
 
@@ -186,7 +335,7 @@ class Meta:
 
 				# Provide member count; it's a macro so it won't have to be explicitly handled in switch statements.
 				if counted:
-					Meta.macro(f'{enum_name}_COUNT', len(members))
+					Meta.define(f'{enum_name}_COUNT', len(members))
 
 ################################################################ Meta-Preprocessor ################################################################
 
@@ -238,9 +387,8 @@ def do(*, output_dir_path, source_file_paths, additional_context, quiet=False, n
 				case _                         : err_lineno = [stack.lineno for stack in traceback.extract_tb(sys.exc_info()[2]) if stack.name == '__META_MAIN__'][0]
 
 			match type(err):
-				case Meta.Error              : err_detail = str(err)
 				case builtins.SyntaxError    : err_detail = 'Syntax error!'
-				case builtins.AssertionError : err_detail = f'Assertion failed!'
+				case builtins.AssertionError : err_detail = err.args[0] if err.args else f'Assertion failed!'
 				case _                       : err_detail = repr(err)
 
 			diagnostic  = ''
@@ -249,7 +397,7 @@ def do(*, output_dir_path, source_file_paths, additional_context, quiet=False, n
 			diagnostic += 128 * '#' + '\n'
 			diagnostic += '\n'
 			diagnostic += f'{location_of(directive, line_offset = err_lineno - len(prepended_lines))}: {err_detail}'
-			raise Meta.Error(diagnostic)
+			raise MetaError(diagnostic)
 
 	################################ Get Meta-Directives ################################
 
@@ -337,7 +485,7 @@ def do(*, output_dir_path, source_file_paths, additional_context, quiet=False, n
 					)
 
 					if meta_decl.lines is None:
-						raise Meta.Error(f'{location_of(meta_decl)} Meta-decl is missing body.')
+						raise MetaError(f'{location_of(meta_decl)} Meta-decl is missing body.')
 
 					def parse_for_symbols(string):
 
@@ -345,7 +493,7 @@ def do(*, output_dir_path, source_file_paths, additional_context, quiet=False, n
 
 						for symbol in [x.strip() for x in string.strip().split(',')]:
 							if symbol in symbols:
-								raise Meta.Error(f'{location_of(meta_decl)} Duplicate symbol "{symbol}" in meta-decl header.')
+								raise MetaError(f'{location_of(meta_decl)} Duplicate symbol "{symbol}" in meta-decl header.')
 							elif symbol == '':
 								pass # Likely means there's an extra comma; we'll just ignore it instead of being anal about it.
 							else:
@@ -361,7 +509,7 @@ def do(*, output_dir_path, source_file_paths, additional_context, quiet=False, n
 							meta_decl.exports = parse_for_symbols(exports_string)
 							meta_decl.imports = parse_for_symbols(imports_string)
 						case _:
-							raise Meta.Error(f'{location_of(meta_decl)} Invalid arguments to meta-decl header.')
+							raise MetaError(f'{location_of(meta_decl)} Invalid arguments to meta-decl header.')
 
 					#
 					# Check for export collisions.
@@ -370,7 +518,7 @@ def do(*, output_dir_path, source_file_paths, additional_context, quiet=False, n
 					for symbol in meta_decl.exports:
 						for conflict in meta_decls:
 							if symbol in conflict.exports:
-								raise Meta.Error(f'Two meta-decls export the same symbol "{symbol}": {location_of(meta_decl)} and {location_of(conflict)}.')
+								raise MetaError(f'Two meta-decls export the same symbol "{symbol}": {location_of(meta_decl)} and {location_of(conflict)}.')
 
 					meta_decls += [meta_decl]
 
@@ -413,7 +561,7 @@ def do(*, output_dir_path, source_file_paths, additional_context, quiet=False, n
 							if conflict is None:
 								meta_includes += [meta_include]
 							else:
-								raise Meta.Error(f'Conflicting meta-include for "{meta_include.output_file_path}": {location_of(meta_include)} and {location_of(conflict)}.')
+								raise MetaError(f'Conflicting meta-include for "{meta_include.output_file_path}": {location_of(meta_include)} and {location_of(conflict)}.')
 
 	#
 	# Check for missing exports.
@@ -422,7 +570,7 @@ def do(*, output_dir_path, source_file_paths, additional_context, quiet=False, n
 	for meta_decl in meta_decls:
 		for symbol in meta_decl.imports:
 			if not any(symbol in other.exports for other in meta_decls):
-				raise Meta.Error(f'{location_of(meta_decl)} The meta-decl depends on "{symbol}" but no meta-decl exports it.')
+				raise MetaError(f'{location_of(meta_decl)} The meta-decl depends on "{symbol}" but no meta-decl exports it.')
 
 	################################ Evaluate Meta-Decls ################################
 
@@ -479,13 +627,13 @@ def do(*, output_dir_path, source_file_paths, additional_context, quiet=False, n
 				# Ensure all exports were found.
 				for symbol in meta_decl.exports:
 					if symbol not in full_context:
-						raise Meta.Error(f'{location_of(meta_decl)} Missing definition for exported symbol "{symbol}".')
+						raise MetaError(f'{location_of(meta_decl)} Missing definition for exported symbol "{symbol}".')
 
 			# No meta-decl managed to execute? Must be some sort of circular dependency!
 			if not noexec and deadend:
 				for executed, meta_decl in tasks:
 					if unsatisfied_symbols := [f'"{symbol}"' for symbol in meta_decl.imports if symbol not in full_context]:
-						raise Meta.Error(f'{location_of(meta_decl)} Unsatisfiable import encountered (likely due to circular dependencies): {', '.join(unsatisfied_symbols)}.')
+						raise MetaError(f'{location_of(meta_decl)} Unsatisfiable import encountered (likely due to circular dependencies): {', '.join(unsatisfied_symbols)}.')
 
 			if noexec:
 				break
@@ -535,7 +683,7 @@ def do(*, output_dir_path, source_file_paths, additional_context, quiet=False, n
 				if Meta.string:
 					Meta.line()
 				for macro_name, (arg_names, determiner_names, nondeterminer_names) in Meta.overloads.items():
-					Meta.macro(f'{macro_name}({', '.join(arg_names)})', f'_{macro_name}__##{'##'.join(determiner_names)}({', '.join(nondeterminer_names)})')
+					Meta.define(f'{macro_name}({', '.join(arg_names)})', f'_{macro_name}__##{'##'.join(determiner_names)}({', '.join(nondeterminer_names)})')
 
 			# Insert rest of the code that was generated.
 			if generated:

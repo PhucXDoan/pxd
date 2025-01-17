@@ -8,12 +8,6 @@ class MetaError(Exception):
 
 class Meta:
 
-	def __stringify(x):
-		match x:
-			case bool()  : return str(x).lower()
-			case float() : return str(int(x) if x.is_integer() else x)
-			case _       : return str(x)
-
 	def Collect(fs):
 
 		def decorator(f):
@@ -118,6 +112,12 @@ class Meta:
 
 		return table
 
+	def stringify(x):
+		match x:
+			case bool()  : return str(x).lower()
+			case float() : return str(int(x) if x.is_integer() else x)
+			case _       : return str(x)
+
 	def exam(values, predicate=None):
 
 		# If no predicate, check if `values` have any overlapping values.
@@ -179,7 +179,7 @@ class Meta:
 				else:
 					Meta.line(rhs)
 		else:
-			expansion = Meta.__stringify(rhs).strip()
+			expansion = Meta.stringify(rhs).strip()
 
 			if do_while:
 				Meta.line(f'#define {lhs} do {{ {expansion} }} while (false)')
@@ -198,7 +198,7 @@ class Meta:
 		else:
 			Meta.overloads[macro_name] = overload
 
-		Meta.define(f'_{macro_name}__{'__'.join(map(Meta.__stringify, determiner_values))}({', '.join(nondeterminer_names)})', expansion)
+		Meta.define(f'_{macro_name}__{'__'.join(map(Meta.stringify, determiner_values))}({', '.join(nondeterminer_names)})', expansion)
 
 	@contextlib.contextmanager
 	def enter(header=None, opening=None, closing=None, *, indented=None):

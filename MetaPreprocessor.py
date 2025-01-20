@@ -112,6 +112,15 @@ class Meta:
 
 		return table
 
+	def Dict(items):
+
+		items = list(items)
+
+		for key, _ in Meta.exam((value, key) for key, value in items):
+			assert False, f'The Meta.Dict has conflicting keys for `{key}`.'
+
+		return { key : value for key, value in items }
+
 	def stringify(x):
 		match x:
 			case bool()  : return str(x).lower()
@@ -127,13 +136,14 @@ class Meta:
 				case dict() : pairs = values.items()
 				case _      : pairs = values
 
-			history = {}
+			history = collections.defaultdict(lambda: [])
 
 			for person, birthday in pairs:
-				if birthday in history:
-					yield person
-				else:
-					history[birthday] = person
+				history[birthday] += [person]
+
+			for birthday, people in history.items():
+				if len(people) >= 2:
+					yield birthday, people
 
 		# Otherwise, find a value that satisfies the predicate.
 		else:

@@ -316,13 +316,18 @@ class Meta:
 
 	def enums(enum_name, type, members, *, counted=False): # TODO Can be made into a contextlib.
 
+		if type is None:
+			header = f'enum {enum_name}'
+		else:
+			header = f'enum {enum_name} : {type}'
+
 		if not members and not counted:
 
 			# An empty enumeration is ill-formed according to the C/C++ standard, so we'll have to forward-declare it.
-			Meta.line(f'enum {enum_name} : {type};')
+			Meta.line(f'{header};')
 
 		else:
-			with Meta.enter(f'enum {enum_name} : {type}'):
+			with Meta.enter(f'{header}'):
 
 				# Determine the longest name.
 				justification = max([0, *(len(member[0]) for member in members if isinstance(member, tuple))])

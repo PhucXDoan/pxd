@@ -58,6 +58,9 @@ class Meta:
 		def __repr__(self):
 			return f'Meta.Obj({ ', '.join(f'{k} = {v}' for k, v in self) })'
 
+		def __contains__(self, key):
+			return key in self.__dict__
+
 	class AddOn:
 
 		def __init__(self, dct=None, **fields):
@@ -93,6 +96,9 @@ class Meta:
 
 		def __repr__(self):
 			return f'Meta.AddOn({ ', '.join(f'{k} = {v}' for k, v in self) })'
+
+		def __contains__(self, key):
+			return key in self.__dict__
 
 	def Table(header, *entries):
 

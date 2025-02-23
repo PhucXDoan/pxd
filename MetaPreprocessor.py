@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-import builtins, os, sys, datetime, copy, types, traceback, contextlib, collections, re
+import builtins, os, sys, datetime, copy, types, traceback, contextlib, collections, re, enum
 
 ################################################################ Meta Primitives ################################################################
 
@@ -320,12 +320,17 @@ class Meta:
 			with Meta.enter(header):
 				yield (None, None)
 
-	def enums(enum_name, type, members, *, counted=False): # TODO Can be made into a contextlib.
+	def enums(enum_name, underlying_type, members=None, *, counted=False): # TODO Can be made into a contextlib.
 
-		if type is None:
+		if type(enum_name) == enum.EnumType:
+			assert members is None
+			members   = enum_name
+			enum_name = enum_name.__name__
+
+		if underlying_type is None:
 			header = f'enum {enum_name}'
 		else:
-			header = f'enum {enum_name} : {type}'
+			header = f'enum {enum_name} : {underlying_type}'
 
 		if not members and not counted:
 
@@ -336,23 +341,31 @@ class Meta:
 			with Meta.enter(f'{header}'):
 
 				# Determine the longest name.
-				justification = max([0, *(len(member[0]) for member in members if isinstance(member, tuple))])
+				if type(members) == enum.EnumType:
+					justification = max([0] + [len(member.name) for member in members])
+				else:
+					justification = max([0] + [len(member[0]) for member in members if isinstance(member, tuple)])
 
 				for member in members:
 
+					# From python enumeration.
+					if type(members) == enum.EnumType:
+						member_name, member_value = member.name, member.value
+
 					# Enumeration with explicit value.
-					if isinstance(member, tuple):
-
+					elif isinstance(member, tuple):
 						member_name, member_value = member
-
-						if isinstance(member_value, bool):
-							member_value = str(member_value).lower()
-
-						Meta.line(f'{enum_name}_{member_name.ljust(justification)} = {member_value},')
 
 					# With implicit value.
 					else:
-						Meta.line(f'{enum_name}_{member},')
+						member_name, member_value = member, None
+
+					if member_value is None:
+						Meta.line(f'{enum_name}_{member_name},')
+					else:
+						if isinstance(member_value, bool):
+							member_value = str(member_value).lower()
+						Meta.line(f'{enum_name}_{member_name.ljust(justification)} = {member_value},')
 
 				# Provide member count; it's a macro so it won't have to be explicitly handled in switch statements.
 				if counted:

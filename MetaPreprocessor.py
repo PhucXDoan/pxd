@@ -100,6 +100,20 @@ class Meta:
 		def __contains__(self, key):
 			return key in self.__dict__
 
+		def __or__(self, other):
+			match other:
+				case dict():
+					for key, value in other.items():
+						self.__setitem__(key, value)
+					return self
+				case Meta.Obj():
+					for key, value in other:
+						self.__setitem__(key, value)
+					return self
+				case _:
+					assert False, f'This operation is not supported on this type.'
+
+
 	def Table(header, *entries):
 
 		for entry in Meta.exam(entries, lambda entry: entry is not None and not isinstance(entry, tuple)):
@@ -387,6 +401,8 @@ def do(*, output_dir_path, source_file_paths, additional_context, quiet=False, n
 
 	def execute(directive, gbls):
 
+		sys.dont_write_bytecode = True # TODO Be cleaner about this.
+
 		prepended_lines = []
 
 		try:
@@ -432,6 +448,9 @@ def do(*, output_dir_path, source_file_paths, additional_context, quiet=False, n
 			diagnostic += '\n'
 			diagnostic += f'{location_of(directive, line_offset = err_lineno - len(prepended_lines))}: {err_detail}'
 			raise MetaError(diagnostic)
+
+		finally:
+			sys.dont_write_bytecode = False
 
 	################################ Get Meta-Directives ################################
 

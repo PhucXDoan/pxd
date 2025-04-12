@@ -334,7 +334,7 @@ class Meta:
 			with Meta.enter(header):
 				yield (None, None)
 
-	def enums(enum_name, underlying_type, members=None, *, counted=False): # TODO Can be made into a contextlib.
+	def enums(enum_name, underlying_type, members=None, *, count=True): # TODO Can be made into a contextlib.
 
 		if type(enum_name) == enum.EnumType:
 			assert members is None
@@ -346,7 +346,7 @@ class Meta:
 		else:
 			header = f'enum {enum_name} : {underlying_type}'
 
-		if not members and not counted:
+		if not members and not count:
 
 			# An empty enumeration is ill-formed according to the C/C++ standard, so we'll have to forward-declare it.
 			Meta.line(f'{header};')
@@ -381,9 +381,12 @@ class Meta:
 							member_value = str(member_value).lower()
 						Meta.line(f'{enum_name}_{member_name.ljust(justification)} = {member_value},')
 
-				# Provide member count; it's a macro so it won't have to be explicitly handled in switch statements.
-				if counted:
-					Meta.define(f'{enum_name}_COUNT', len(members))
+			# Provide member count; it's its own enumeration so it won't have
+			# to be explicitly handled in switch statements. Furthermore, it
+			# being an enumeration makes the definition scoped; if it was a macro
+			# instead, then there might be conflicts in definitions.
+			if count:
+				Meta.line(f'enum {{ {enum_name}_COUNT = {len(members)} }};')
 
 ################################################################ Meta-Preprocessor ################################################################
 

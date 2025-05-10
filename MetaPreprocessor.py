@@ -1,754 +1,861 @@
 #!/usr/bin/env python3
-import builtins, os, sys, datetime, copy, types, traceback, contextlib, collections, re, enum
+import pathlib, types, contextlib, re, traceback, builtins, sys, enum, copy
+
+################################################################ Helpers ################################################################
+
+def Str(x):
+	match x:
+		case bool  () : return str(x).lower()
+		case float () : return str(int(x) if x.is_integer() else x)
+		case _        : return str(x)
+
+class Obj: # TODO Improve.
+
+	def __init__(self, dct=None, **fields):
+		assert dct is None or not fields, \
+			'Obj has both an argument and kwargs; likely a mistake?'
+		for key, value in (fields if dct is None else dct).items():
+			self.__dict__[key] = value
+
+	def __getattr__(self, key):
+		assert key in ('__deepcopy__', '__setstate__'), \
+			f'The Obj has no field (.{key}) to read.'
+		raise AttributeError
+
+	def __setattr__(self, key, value):
+		assert key in self.__dict__, \
+			f'The Obj has no field (.{key}) to write.'
+		self.__dict__[key] = value
+
+	def __getitem__(self, key):
+		assert key in self.__dict__, \
+			f'The Obj has no field [`{key}`] to read.'
+		return self.__dict__[key]
+
+	def __setitem__(self, key, value):
+		assert key in self.__dict__, \
+			f'The Obj has no field [`{key}`] to write.'
+		self.__dict__[key] = value
+		return value
+
+	def __iter__(self):
+		for name, value in self.__dict__.items():
+			yield (name, value)
+
+	def __repr__(self):
+		return f'Obj({ ', '.join(f'{k} = {v}' for k, v in self) })'
+
+	def __contains__(self, key):
+		return key in self.__dict__
+
+class AddOn:
+
+	def __init__(self, dct=None, **fields):
+		assert dct is None or not fields, \
+			'AddOn has both an argument and kwargs; likely a mistake?'
+		for key, value in (fields if dct is None else dct).items():
+			self.__dict__[key] = value
+
+	def __getattr__(self, key):
+		assert key in ('__deepcopy__', '__setstate__'), \
+			f'The AddOn has no field (.{key}) to read.'
+		raise AttributeError
+
+	def __setattr__(self, key, value):
+		assert key not in self.__dict__, \
+			f'The AddOn has field (.{key}) already.'
+		self.__dict__[key] = value
+
+	def __getitem__(self, key):
+		assert key in self.__dict__, \
+			f'The AddOn has no field [`{key}`] to read.'
+		return self.__dict__[key]
+
+	def __setitem__(self, key, value):
+		assert key not in self.__dict__, \
+			f'The  has field [`{key}`] already.'
+		self.__dict__[key] = value
+		return value
+
+	def __iter__(self):
+		for name, value in self.__dict__.items():
+			yield (name, value)
+
+	def __repr__(self):
+		return f'AddOn({ ', '.join(f'{k} = {v}' for k, v in self) })'
+
+	def __contains__(self, key):
+		return key in self.__dict__
+
+	def __or__(self, other):
+		match other:
+			case dict():
+				for key, value in other.items():
+					self.__setitem__(key, value)
+				return self
+			case Obj():
+				for key, value in other:
+					self.__setitem__(key, value)
+				return self
+			case _:
+				assert False, f'This operation is not supported on this type.'
+
+def Table(header, *entries): # TODO Improve.
+
+	table = []
+
+	for entry in entries:
+		if entry is not None: # Allows for an entry to be easily omitted.
+			table += [Obj(**dict(zip(header, entry)))]
+
+	return table
 
 ################################################################ Meta Primitives ################################################################
 
 class MetaError(Exception):
-	pass
+
+	def __init__(self, diagnostic = None, *, undefined_exported_symbol=None):
+		self.diagnostic                = diagnostic
+		self.undefined_exported_symbol = undefined_exported_symbol
+
+	def __str__(self):
+		return self.diagnostic
 
 class Meta:
 
-	def Collect(fs):
+	def __init__(self):
+		self.include_file_path = None
 
-		def decorator(f):
-			nonlocal fs
-			match fs:
-				case list():
-					fs += [f]
-				case dict():
-					assert f.__name__ not in fs, 'Function named `{f.__name__}` already in the collection.'
-					fs[f.__name__] = f
-			return f
+	def _start(self, include_file_path, include_directive_line_number):
+		self.include_file_path             = include_file_path
+		self.include_directive_line_number = include_directive_line_number
+		self.output                        = ''
+		self.indent                        = 0
+		self.within_macro                  = False
+		self.overloads                     = {}
 
-		return decorator
+	def _end(self):
+		if self.include_file_path is not None:
 
-	class Obj:
+			generated   = self.output
+			self.output = ''
 
-		def __init__(self, dct=None, **fields):
-			assert dct is None or not fields, \
-				'Meta.Obj has both an argument and kwargs; likely a mistake?'
-			for key, value in (fields if dct is None else dct).items():
-				self.__dict__[key] = value
+			self.line(f'// [{self.include_file_path}:{self.include_directive_line_number}].')
 
-		def __getattr__(self, key):
-			assert key in ('__deepcopy__', '__setstate__'), \
-				f'The Meta.Obj has no field (.{key}) to read.'
-			raise AttributeError
+			# Put any overloaded macros first.
+			if self.overloads:
+				if self.output:
+					self.line()
+				for macro_name, (arg_names, determiner_names, nondeterminer_names) in self.overloads.items():
+					self.define(f'{macro_name}({', '.join(arg_names)})', f'_{macro_name}__##{'##'.join(determiner_names)}({', '.join(nondeterminer_names)})')
 
-		def __setattr__(self, key, value):
-			assert key in self.__dict__, \
-				f'The Meta.Obj has no field (.{key}) to write.'
-			self.__dict__[key] = value
+			# Insert rest of the code that was generated.
+			if generated:
+				if self.output:
+					self.line()
+				self.line(generated)
 
-		def __getitem__(self, key):
-			assert key in self.__dict__, \
-				f'The Meta.Obj has no field [`{key}`] to read.'
-			return self.__dict__[key]
+			pathlib.Path(self.include_file_path).parent.mkdir(parents=True, exist_ok=True)
+			open(self.include_file_path, 'w').write(self.output)
 
-		def __setitem__(self, key, value):
-			assert key in self.__dict__, \
-				f'The Meta.Obj has no field [`{key}`] to write.'
-			self.__dict__[key] = value
-			return value
+	def line(self, input='\n\n'): # Outputs a single empty line by default.
+		assert self.include_file_path is not None
 
-		def __iter__(self):
-			for name, value in self.__dict__.items():
-				yield (name, value)
+		strings = []
 
-		def __repr__(self):
-			return f'Meta.Obj({ ', '.join(f'{k} = {v}' for k, v in self) })'
+		match input:
+			case types.GeneratorType() : strings = list(input)
+			case list()                : strings = input
+			case str()                 : strings = [input]
+			case _                     : raise TypeError('Input type not supported.')
 
-		def __contains__(self, key):
-			return key in self.__dict__
+		for string in strings:
 
-	class AddOn:
+			# Split to process each line in order to do indenting correctly for multilined input strings.
+			lines = (string + '\n').splitlines()
 
-		def __init__(self, dct=None, **fields):
-			assert dct is None or not fields, \
-				'Meta.AddOn has both an argument and kwargs; likely a mistake?'
-			for key, value in (fields if dct is None else dct).items():
-				self.__dict__[key] = value
+			# Remove first empty line; useful for multilined strings.
+			if lines and lines[0].strip() == '':
+				lines = lines[1:]
 
-		def __getattr__(self, key):
-			assert key in ('__deepcopy__', '__setstate__'), \
-				f'The Meta.AddOn has no field (.{key}) to read.'
-			raise AttributeError
+			# Remove last empty line; useful for multilined strings.
+			if lines and lines[-1].strip() == '':
+				lines = lines[:-1]
 
-		def __setattr__(self, key, value):
-			assert key not in self.__dict__, \
-				f'The Meta.AddOn has field (.{key}) already.'
-			self.__dict__[key] = value
+			global_indent = None
+			for line in lines:
 
-		def __getitem__(self, key):
-			assert key in self.__dict__, \
-				f'The Meta.AddOn has no field [`{key}`] to read.'
-			return self.__dict__[key]
+				# Determine line's indent level.
+				line_indent = len(line) - len(line.lstrip('\t'))
 
-		def __setitem__(self, key, value):
-			assert key not in self.__dict__, \
-				f'The Meta.AddOn has field [`{key}`] already.'
-			self.__dict__[key] = value
-			return value
+				# Determine the whole string's indent level based on the first line with actual text.
+				if global_indent is None and line.strip():
+					global_indent = line_indent
 
-		def __iter__(self):
-			for name, value in self.__dict__.items():
-				yield (name, value)
+				# Set indents appropriately.
+				line         = line.removeprefix('\t' * min(line_indent, global_indent or 0))
+				line         = '\t' * self.indent + line if line.strip() else ''
+				self.output += line + (' \\' if self.within_macro else '') + '\n'
 
-		def __repr__(self):
-			return f'Meta.AddOn({ ', '.join(f'{k} = {v}' for k, v in self) })'
+	@contextlib.contextmanager
+	def enter(self, header=None, opening=None, closing=None, *, indented=None):
+		assert self.include_file_path is not None
 
-		def __contains__(self, key):
-			return key in self.__dict__
+		#
+		# Automatically determine the scope parameters.
+		#
 
-		def __or__(self, other):
-			match other:
-				case dict():
-					for key, value in other.items():
-						self.__setitem__(key, value)
-					return self
-				case Meta.Obj():
-					for key, value in other:
-						self.__setitem__(key, value)
-					return self
-				case _:
-					assert False, f'This operation is not supported on this type.'
+		defining_macro = False
 
+		def header_is(*keywords):
+			string = fr'^\s*({'|'.join(keywords)})\b'
+			return header is not None and re.search(string, header)
 
-	def Table(header, *entries):
+		if header_is('#if', '#ifdef', '#elif', '#else'):
+			if closing is None: closing = '#endif'
 
-		for entry in Meta.exam(entries, lambda entry: entry is not None and not isinstance(entry, tuple)):
-			assert False, f'The Meta.Table has a non-tuple row: {entry}.'
+		elif header_is('struct', 'union', 'enum'):
+			if opening is None: opening = '{'
+			if closing is None: closing = '};'
 
-		for entry in Meta.exam(entries, lambda entry: len(entry) != len(header)):
-			assert False, \
-				f'The Meta.Table has {len(header)} columns ({', '.join(header)}), ' \
-				f'but this entry has {len(entry)}: {entry}.'
+		elif header_is('case'):
+			if opening is None: opening  = '{'
+			if closing is None: closing  = '} break;'
 
-		table = []
+		elif header_is('#define'):
+			defining_macro    = True
+			self.within_macro = True
 
-		for entry in entries:
-			if entry is not None: # Allows for an entry to be easily omitted.
-				table += [Meta.Obj(**dict(zip(header, entry)))]
+		elif header is not None and header.endswith('='):
+			if opening  is None: opening  = '{'
+			if closing  is None: closing  = '};'
+			if indented is None: indented = True;
 
-		return table
-
-	def Dict(items):
-
-		items = list(items)
-
-		for key, _ in Meta.exam((value, key) for key, value in items):
-			assert False, f'The Meta.Dict has conflicting keys for `{key}`.'
-
-		return { key : value for key, value in items }
-
-	def stringify(x):
-		match x:
-			case bool()  : return str(x).lower()
-			case float() : return str(int(x) if x.is_integer() else x)
-			case _       : return str(x)
-
-	def exam(values, predicate=None):
-
-		# If no predicate, check if `values` have any overlapping values.
-		if predicate is None:
-
-			match values:
-				case dict() : pairs = values.items()
-				case _      : pairs = values
-
-			history = collections.defaultdict(lambda: [])
-
-			for person, birthday in pairs:
-				history[birthday] += [person]
-
-			for birthday, people in history.items():
-				if len(people) >= 2:
-					yield birthday, people
-
-		# Otherwise, find a value that satisfies the predicate.
 		else:
-			for value in values:
-				if predicate(value):
-					yield value
+			if opening is None: opening = '{'
+			if closing is None: closing = '}'
 
-	def line(string='\n\n'):
+		#
+		# Header and opening lines.
+		#
 
-		# Split to process each line in order to do indenting correctly for multilined input strings.
-		lines = (string + '\n').splitlines()
+		if header is not None:
+			self.line(header)
 
-		# Remove first empty line; useful for multilined strings.
-		if lines and lines[0].strip() == '':
-			lines = lines[1:]
+		if indented:
+			self.indent += 1
 
-		# Remove last empty line; useful for multilined strings.
-		if lines and lines[-1].strip() == '':
-			lines = lines[:-1]
+		if opening:
+			self.line(opening)
 
-		global_indent = None
-		for line in lines:
+		#
+		# Body.
+		#
 
-			# Determine line's indent level.
-			line_indent = len(line) - len(line.lstrip('\t'))
+		self.indent += 1
+		yield
+		self.indent -= 1
 
-			# Determine the whole string's indent level based on the first line with actual text.
-			if global_indent is None and line.strip():
-				global_indent = line_indent
+		#
+		# Closing lines.
+		#
 
-			# Set indents appropriately.
-			line         = line.removeprefix('\t' * min(line_indent, global_indent or 0))
-			line         = '\t' * Meta.indent + line if line.strip() else ''
-			Meta.string += line + (' \\' if Meta.within_macro else '') + '\n'
+		if closing is not None:
+			self.line(closing)
 
-	def define(lhs, rhs, *, do_while=False):
+		if indented:
+			self.indent -= 1
+
+		if defining_macro:
+			self.within_macro = False
+			self.line()
+
+	def enums(self, *args):
+		assert self.include_file_path is not None
+		return self.__enums(self, *args)
+
+	class __enums:
+
+		def __init__(self, meta, enum_name, underlying_type, members = None, count = True):
+
+			self.meta            = meta
+			self.enum_name       = enum_name
+			self.underlying_type = underlying_type
+			self.members         = members
+			self.count           = count
+
+			if members is not None: # The list of members are already provided?
+				self.__exit__()
+
+		def __enter__(self): # The user provides the list of members in a `with` context.
+
+			if self.members is not None:
+				# TODO Better error message.
+				raise ValueError('Argument `members` cannot be provided if a `with` context is used.')
+
+			self.members = []
+			return self.members
+
+		def __exit__(self, *dont_care_about_exceptions):
+
+			enum_type = '' if self.underlying_type is None else f' : {self.underlying_type}'
+
+			with self.meta.enter(f'enum {self.enum_name}{enum_type}'):
+
+				# Determine the longest name.
+				member_name_just = 0
+				for member in self.members:
+					match member:
+						case (name, value) : member_name_just = max(member_name_just, len(name))
+						case  name         : member_name_just = max(member_name_just, len(name))
+
+				# Output each member.
+				for member in self.members:
+
+					match member:
+						case (name, value) : member_name, member_value = name, value
+						case  name         : member_name, member_value = name, None
+
+					# Implicit value.
+					if member_value is None:
+						self.meta.line(f'{self.enum_name}_{member_name},')
+
+					# Explicit value.
+					else:
+						self.meta.line(f'{self.enum_name}_{member_name.ljust(member_name_just)} = {member_value},')
+
+			# Provide the amount of members; it's its own enumeration so it won't have
+			# to be explicitly handled in switch statements. Using a #define would also
+			# work, but this could result in a name conflict. Making the count be its own
+			# enumeration prevents this collision since it's scoped.
+			if self.count:
+				self.meta.line(f'enum{enum_type} {{ {self.enum_name}_COUNT = {len(self.members)} }};')
+
+	def define(self, *lhs_rhs_pairs, do_while=False):
+
+		lhs, rhs = lhs_rhs_pairs
 
 		if isinstance(rhs, str) and '\n' in rhs:
-			with Meta.enter(f'#define {lhs}'):
+			with self.enter(f'#define {lhs}'):
 				if do_while:
-					with Meta.enter('do', '{', '}\nwhile (false)'):
-						Meta.line(rhs)
+					with self.enter('do', '{', '}\nwhile (false)'):
+						self.line(rhs)
 				else:
-					Meta.line(rhs)
+					self.line(rhs)
 		else:
-			expansion = Meta.stringify(rhs).strip()
+			expansion = Str(rhs).strip()
 
 			if do_while:
-				Meta.line(f'#define {lhs} do {{ {expansion} }} while (false)')
+				self.line(f'#define {lhs} do {{ {expansion} }} while (false)')
 			else:
-				Meta.line(f'#define {lhs} {expansion}')
+				self.line(f'#define {lhs} {expansion}')
 
-	def overload(macro_name, args, expansion):
+	def overload(self, macro_name, args, expansion):
 
 		arg_names                           = [arg[0] if isinstance(arg, tuple) else arg for arg in args]
 		determiner_names, determiner_values = zip(*[ arg for arg in args if     isinstance(arg, tuple)])
 		nondeterminer_names                 =      [ arg for arg in args if not isinstance(arg, tuple)]
 		overload                            = (arg_names, determiner_names, nondeterminer_names)
 
-		if macro_name in Meta.overloads:
-			assert Meta.overloads[macro_name] == overload
+		if macro_name in self.overloads:
+			assert self.overloads[macro_name] == overload
 		else:
-			Meta.overloads[macro_name] = overload
+			self.overloads[macro_name] = overload
 
-		Meta.define(f'_{macro_name}__{'__'.join(map(Meta.stringify, determiner_values))}({', '.join(nondeterminer_names)})', expansion)
+		self.define(f'_{macro_name}__{'__'.join(map(Str, determiner_values))}({', '.join(nondeterminer_names)})', expansion)
 
-	@contextlib.contextmanager
-	def enter(header=None, opening=None, closing=None, *, indented=None):
+	def ifs(self, xs, *, style):
 
-		defining_macro = False
+		def decorator(function):
 
-		# Automatically configure the opening and closing lines if possible.
+			for xi, x in enumerate(xs):
 
-		def match(*keywords):
-			string = fr'^\s*({'|'.join(keywords)})\b'
-			return header is not None and re.search(string, header)
+				iterator  = function(x)
+				condition = next(iterator)
 
-		if match('#if', '#ifdef', '#elif', '#else'):
-			if closing is None: closing = '#endif'
+				match style:
 
-		elif match('struct', 'union', 'enum'):
-			if opening is None: opening = '{'
-			if closing is None: closing = '};'
+					case 'if':
+						header  = f'if ({condition})'
+						opening = None
+						closing = None
 
-		elif match('case'):
-			if opening is None: opening  = '{'
-			if closing is None: closing  = '} break;'
+					case '#if':
+						header  = f'#if {condition}'
+						opening = None
+						closing = None
 
-		elif match('#define'):
-			defining_macro    = True
-			Meta.within_macro = True
+					case 'else if':
+						header  = f'if ({condition})' if xi == 0 else f'else if ({condition})'
+						opening = None
+						closing = None
 
-		else:
-			if opening is None: opening = '{'
-			if closing is None: closing = '}'
+					case _: raise ValueError('Unknown `if` style.') # TODO Multiple periods...
 
-		# Header and opening lines.
-		if header is not None:
-			Meta.line(header)
-		if indented:
-			Meta.indent += 1
-		if opening:
-			Meta.line(opening)
+				with self.enter(header, opening, closing):
+					try:
+						next(iterator)
+					except StopIteration:
+						pass
 
-		# Body.
-		Meta.indent += 1
-		yield
-		Meta.indent -= 1
+		return decorator
 
-		# Closing lines.
-		if closing is not None:
-			Meta.line(closing)
-		if indented:
-			Meta.indent -= 1
-		if defining_macro:
-			Meta.within_macro = False
-			Meta.line()
+def MetaDirective(include_file_path, include_directive_line_number, exports, imports, meta_globals):
+	def decorator(function):
+		nonlocal meta_globals
 
-	def ifs        (cases): return Meta.__ifs(cases, elifs=False, has_else=False, pound_if=False)
-	def IFS        (cases): return Meta.__ifs(cases, elifs=False, has_else=False, pound_if=True )
-	def if_elses   (cases): return Meta.__ifs(cases, elifs=False, has_else=True , pound_if=False)
-	def IF_ELSES   (cases): return Meta.__ifs(cases, elifs=False, has_else=True , pound_if=True )
-	def elifs      (cases): return Meta.__ifs(cases, elifs=True , has_else=False, pound_if=False)
-	def ELIFS      (cases): return Meta.__ifs(cases, elifs=True , has_else=False, pound_if=True )
-	def elifs_else (cases): return Meta.__ifs(cases, elifs=True , has_else=True , pound_if=False)
-	def ELIFS_ELSE (cases): return Meta.__ifs(cases, elifs=True , has_else=True , pound_if=True )
-	def __ifs(cases, *, elifs, has_else, pound_if):
+		#
+		# Execute the meta-directive.
+		#
 
-		match cases:
-			case dict()     : items = list(cases.items())
-			case Meta.Obj() : items = list(cases.__dict__.items())
-			case _          : assert False
+		function_globals = {
+			symbol : meta_globals[symbol] if isinstance(meta_globals[symbol], types.ModuleType) else copy.deepcopy(meta_globals[symbol])
+			for symbol in imports
+		}
 
-		for index, (condition, value) in enumerate(items):
+		function_globals['Meta'] = meta_globals['Meta']
 
-			# Determine header.
-			if index and elifs:
-				if pound_if : header = f'#elif {condition}'
-				else        : header = f'else if ({condition})'
-			else:
-				if pound_if : header = f'#if {condition}'
-				else        : header = f'if ({condition})'
+		function_globals['Meta']._start(include_file_path, include_directive_line_number)
+		types.FunctionType(function.__code__, function_globals)()
+		function_globals['Meta']._end()
 
-			# Suppress the default closing line if there's going to be another case.
-			closing = '' if pound_if and ((elifs and index != len(items) - 1) or has_else) else None
+		#
+		# Ensure the meta-directive actually defined all of the symbols it said it'd export.
+		#
 
-			# Create the if-body.
-			with Meta.enter(header, None, closing):
-				yield (condition, value)
+		for symbol in exports:
 
-			# Create the else-body if needed.
-			if not elifs and has_else:
-				if items:
-					if pound_if : header = f'#else'
-					else        : header = f'else'
-				else:
-					header = None
-				with Meta.enter(header):
-					yield (None, value)
+			if symbol not in function_globals:
+				raise MetaError(undefined_exported_symbol=symbol)
 
-		# Create final else-body if needed.
-		if elifs and has_else:
-			if items:
-				if pound_if : header = f'#else'
-				else        : header = f'else'
-			else:
-				header = None
-			with Meta.enter(header):
-				yield (None, None)
+			meta_globals[symbol] =  function_globals[symbol]
 
-	def enums(enum_name, underlying_type, members=None, *, count=True): # TODO Can be made into a contextlib.
-
-		if type(enum_name) == enum.EnumType:
-			assert members is None
-			members   = enum_name
-			enum_name = enum_name.__name__
-
-		if underlying_type is None:
-			header = f'enum {enum_name}'
-		else:
-			header = f'enum {enum_name} : {underlying_type}'
-
-		if not members and not count:
-
-			# An empty enumeration is ill-formed according to the C/C++ standard, so we'll have to forward-declare it.
-			Meta.line(f'{header};')
-
-		else:
-			with Meta.enter(f'{header}'):
-
-				# Determine the longest name.
-				if type(members) == enum.EnumType:
-					justification = max([0] + [len(member.name) for member in members])
-				else:
-					justification = max([0] + [len(member[0]) for member in members if isinstance(member, tuple)])
-
-				for member in members:
-
-					# From python enumeration.
-					if type(members) == enum.EnumType:
-						member_name, member_value = member.name, member.value
-
-					# Enumeration with explicit value.
-					elif isinstance(member, tuple):
-						member_name, member_value = member
-
-					# With implicit value.
-					else:
-						member_name, member_value = member, None
-
-					if member_value is None:
-						Meta.line(f'{enum_name}_{member_name},')
-					else:
-						if isinstance(member_value, bool):
-							member_value = str(member_value).lower()
-						Meta.line(f'{enum_name}_{member_name.ljust(justification)} = {member_value},')
-
-			# Provide member count; it's its own enumeration so it won't have
-			# to be explicitly handled in switch statements. Furthermore, it
-			# being an enumeration makes the definition scoped; if it was a macro
-			# instead, then there might be conflicts in definitions.
-			if count:
-				Meta.line(f'enum {{ {enum_name}_COUNT = {len(members)} }};')
+	return decorator
 
 ################################################################ Meta-Preprocessor ################################################################
 
-def do(*, output_dir_path, source_file_paths, additional_context, quiet=False, noexec=False, output_receipt=True):
+def do(*,
+	output_dir_path,
+	meta_py_file_path = None,
+	source_file_paths,
+):
 
-	meta_decls    = []
-	meta_includes = []
+	output_dir_path   =  pathlib.Path(output_dir_path )
+	source_file_paths = [pathlib.Path(source_file_path) for source_file_path in source_file_paths]
 
-	def location_of(a, b = None, *, line_offset=0):
-		match (a, b):
-			case (source_file_path, line_number) if isinstance(source_file_path, str) and isinstance(line_number, int):
-				return f'[{source_file_path}:{line_number + line_offset}]'
-			case (meta_directive, None):
-				return location_of(meta_directive.source_file_path, meta_directive.line_number, line_offset=line_offset)
+	if meta_py_file_path is None:
+		meta_py_file_path = pathlib.Path(output_dir_path, '__meta__.py')
 
-	def execute(directive, gbls):
+	#
+	# Get all of the #meta directives.
+	#
 
-		sys.dont_write_bytecode = True # TODO Be cleaner about this.
+	meta_directives = []
 
-		prepended_lines = []
+	def get_ports(string, diagnostic_header):
 
-		try:
+		match string.split(':'):
 
-			# We have to introduce a wrapper since `exec` assumes class definition context
-			# and some weird non-intuitive variable binding stuff can happen.
-			prepended_lines += ['def __META_MAIN__():']
+			case [exports         ] : ports = [exports, None   ]
+			case [exports, imports] : ports = [exports, imports]
+			case _                  : raise MetaError(f'{diagnostic_header} Too many colons for meta-directive!')
 
-			# In case there's no code.
-			prepended_lines += ['\tpass']
-
-			# Declare globals for the exports.
-			if hasattr(directive, 'exports') and directive.exports:
-				prepended_lines += [f'\tglobal {', '.join(directive.exports)}']
-
-			# Execute.
-			meta_code  = ''
-			meta_code += '\n'.join(prepended_lines)
-			meta_code += '\n'
-			meta_code += '\n'.join(f'\t{line}' for line in directive.lines)
-			meta_code += '\n'
-			meta_code += '__META_MAIN__()\n'
-			exec(meta_code, gbls, {})
-
-		except Exception as err:
-
-			err_trace = traceback.format_exc()
-
-			match type(err):
-				case builtins.SyntaxError      : err_lineno = err.lineno
-				case builtins.IndentationError : err_lineno = err.lineno
-				case _                         : err_lineno = [stack.lineno for stack in traceback.extract_tb(sys.exc_info()[2]) if stack.name == '__META_MAIN__'][0]
-
-			match type(err):
-				case builtins.SyntaxError    : err_detail = 'Syntax error!'
-				case builtins.AssertionError : err_detail = err.args[0] if err.args else f'Assertion failed!'
-				case _                       : err_detail = repr(err)
-
-			diagnostic  = ''
-			diagnostic += 128 * '#' + '\n'
-			diagnostic += err_trace
-			diagnostic += 128 * '#' + '\n'
-			diagnostic += '\n'
-			diagnostic += f'{location_of(directive, line_offset = err_lineno - len(prepended_lines))}: {err_detail}'
-			raise MetaError(diagnostic)
-
-		finally:
-			sys.dont_write_bytecode = False
-
-	################################ Get Meta-Directives ################################
+		return [
+			{
+				symbol.strip()
+				for symbol in port.split(',')
+				if symbol.strip() # We'll be fine if there's extra commas; just remove the empty strings.
+			} if port is not None else None for port in ports
+		]
 
 	for source_file_path in source_file_paths:
 
 		remaining_lines       = open(source_file_path, 'rb').read().decode('UTF-8').splitlines()
 		remaining_line_number = 1
 
-		while remaining_lines:
+		# Python file that might just be a big meta-directive.
+		if source_file_path.suffix == '.py':
 
-			header_line            = remaining_lines[0]
-			header_line_number     = remaining_line_number
-			remaining_lines        = remaining_lines[1:]
-			remaining_line_number += 1
+			while remaining_lines:
 
-			def eat_body_lines():
+				header_line            = remaining_lines[0]
+				header_line_number     = remaining_line_number
+				remaining_lines        = remaining_lines[1:]
+				remaining_line_number += 1
 
-				nonlocal remaining_lines, remaining_line_number
+				diagnostic_header  = ''
+				diagnostic_header  = '#' * 64 + '\n'
+				diagnostic_header += f'{header_line.strip()}\n'
+				diagnostic_header += '#' * 64 + '\n'
+				diagnostic_header += f'# [{source_file_path}:{header_line_number}]'
 
-				if remaining_lines[0].strip().startswith('/*'):
-
-					body_lines    = []
-					global_indent = None
-
-					for body_line in [remaining_lines[0].strip().removeprefix('/*').strip(), *remaining_lines[1:]]:
-
-						remaining_lines        = remaining_lines[1:]
-						remaining_line_number += 1
-
-						# Truncate up to the end of the block comment.
-						if (ending := body_line.find('*/')) != -1:
-							body_line = body_line[:ending]
-
-						# Determine indent level.
-						original_line_indent = len(body_line) - len(body_line.lstrip('\t'))
-
-						# Determine global indent if needed and possible.
-						a_comment = body_line.strip().startswith('#')
-						nonempty  = body_line.strip() != ''
-						if global_indent is None and len(body_lines) and nonempty and not a_comment:
-							global_indent = original_line_indent
-
-						# Cut away the extraneous indent. It's possible the the line has less
-						# indentation than the global indentation, but we won't worry too much about that honestly.
-						body_line = body_line.removeprefix('\t' * min(original_line_indent, global_indent or 0))
-
-						# Got line!
-						body_lines += [body_line]
-						if ending != -1:
-							break
-
-					return body_lines
-
-				else:
-					return None
-
-			#
-			# Parse for a meta-decl.
-			#
-
-			tmp = header_line
-			tmp = tmp.strip()
-
-			if tmp.startswith('/*'): # Meta-decls are identified in comment blocks...
-				tmp = tmp.removeprefix('/*')
+				tmp = header_line
 				tmp = tmp.strip()
-
-				if tmp.startswith('#meta'): # ... with a special tag.
+				if tmp.startswith('#meta'):
 					tmp = tmp.removeprefix('#meta')
-					if (index := tmp.find('//')) != -1: tmp = tmp[:index]
-					if (index := tmp.find('#' )) != -1: tmp = tmp[:index]
 					tmp = tmp.strip()
-					tmp = tmp.split(':')
 
-					#
-					# Process meta-decl header.
-					#
+					exports, imports = get_ports(tmp, diagnostic_header)
 
-					meta_decl = types.SimpleNamespace(
-						source_file_path = source_file_path,
-						line_number      = header_line_number,
-						lines            = eat_body_lines(),
-						exports          = [],
-						imports          = [],
-					)
+					meta_directives += [types.SimpleNamespace(
+						source_file_path   = source_file_path,
+						header_line_number = header_line_number,
+						include_file_path  = None,
+						exports            = exports,
+						imports            = imports,
+						lines              = remaining_lines,
+						diagnostic_header  = diagnostic_header, # TODO Needed?
+					)]
 
-					if meta_decl.lines is None:
-						raise MetaError(f'{location_of(meta_decl)} Meta-decl is missing body.')
+					break # The rest of the file is the entire #meta directive.
 
-					def parse_for_symbols(string):
+				elif tmp:
+					break # First non-empty line is not a #meta directive.
 
-						symbols = []
+		# Assuming C file.
+		else:
 
-						for symbol in [x.strip() for x in string.strip().split(',')]:
-							if symbol in symbols:
-								raise MetaError(f'{location_of(meta_decl)} Duplicate symbol "{symbol}" in meta-decl header.')
-							elif symbol == '':
-								pass # Likely means there's an extra comma; we'll just ignore it instead of being anal about it.
-							else:
-								symbols += [symbol]
+			while remaining_lines:
 
-						return symbols
+				#
+				# See if there's an #include directive.
+				#
 
-					match tmp:
-						case [exports_string]:
-							meta_decl.exports = parse_for_symbols(exports_string)
-							meta_decl.imports = []
-						case [exports_string, imports_string]:
-							meta_decl.exports = parse_for_symbols(exports_string)
-							meta_decl.imports = parse_for_symbols(imports_string)
-						case _:
-							raise MetaError(f'{location_of(meta_decl)} Invalid arguments to meta-decl header.')
+				include_file_path = None
+				include_line      = remaining_lines[0]
+				tmp               = include_line
+				tmp               = tmp.strip()
 
-					#
-					# Check for export collisions.
-					#
+				if tmp.startswith('#include'):
+					tmp = tmp.removeprefix('#include')
+					tmp = tmp.strip()
 
-					for symbol in meta_decl.exports:
-						for conflict in meta_decls:
-							if symbol in conflict.exports:
-								raise MetaError(f'Two meta-decls export the same symbol "{symbol}": {location_of(meta_decl)} and {location_of(conflict)}.')
+					if tmp:
+						end_quote = {
+							'<' : '>',
+							'"' : '"',
+						}.get(tmp[0], None)
 
-					meta_decls += [meta_decl]
+						if end_quote is not None and (length := tmp[1:].find(end_quote)) != -1:
+							include_file_path      = pathlib.Path(output_dir_path, tmp[1:][:length])
+							remaining_lines        = remaining_lines[1:]
+							remaining_line_number += 1
 
-			#
-			# Parse for a meta-include.
-			#
+				if include_file_path is None:
+					include_line = None
 
-			tmp = header_line
-			tmp = tmp.strip()
+				#
+				# See if there's a block comment with #meta.
+				#
 
-			if tmp.startswith('#include'): # Meta-includes are identified by preprocessor include directives...
-				tmp = tmp.removeprefix('#include')
-				tmp = tmp.strip()
+				header_line            = remaining_lines[0]
+				header_line_number     = remaining_line_number
+				remaining_lines        = remaining_lines[1:]
+				remaining_line_number += 1
 
-				match tmp[0] if tmp else None:
-					case '<': end_quote = '>'
-					case '"': end_quote = '"'
-					case _  : end_quote = None
+				diagnostic_header  = ''
+				diagnostic_header  = '#' * 64 + '\n'
+				if include_line is not None:
+					diagnostic_header += f'{include_line.strip()}\n'
+				diagnostic_header += f'{header_line.strip()}\n'
+				diagnostic_header += '#' * 64 + '\n'
+				diagnostic_header += f'# [{source_file_path}:{header_line_number}]'
 
-				if end_quote is not None and (include_file_path_len := tmp[1:].find(end_quote)) != -1:
-					if (include_file_path := tmp[1:][:include_file_path_len]).endswith('.meta'): # ... with a specific file extension.
+				tmp                      = header_line
+				tmp                      = tmp.strip()
+				if tmp.startswith('/*'):
+					tmp = tmp.removeprefix('/*')
+					tmp = tmp.strip()
 
-						meta_include = types.SimpleNamespace(
-							source_file_path = source_file_path,
-							output_file_path = f'{output_dir_path}/{include_file_path}',
-							line_number      = header_line_number,
-							lines            = eat_body_lines(),
-						)
+					if tmp.startswith('#meta'):
+						tmp = tmp.removeprefix('#meta')
+						tmp = tmp.strip()
 
-						# Meta-includes are not required to have a body, so this allows the same generated code to be used multiple times.
-						if meta_include.lines is not None:
+						exports, imports = get_ports(tmp, diagnostic_header)
 
-							conflict = None
+						#
+						# Get lines of the block comment.
+						#
 
-							for other in meta_includes:
-								if other.output_file_path == meta_include.output_file_path:
-									conflict = other
-									break
+						lines         = []
+						global_indent = None
+						ending        = -1
 
-							if conflict is None:
-								meta_includes += [meta_include]
-							else:
-								raise MetaError(f'Conflicting meta-include for "{meta_include.output_file_path}": {location_of(meta_include)} and {location_of(conflict)}.')
+						while ending == -1:
+
+							# Pop a line of the block comment.
+
+							if not remaining_lines:
+								raise MetaError(f'{diagnostic_header} Meta-directive without a closing `*/`!')
+							line                   = remaining_lines[0]
+							remaining_lines        = remaining_lines[1:]
+							remaining_line_number += 1
+
+							# Truncate up to the end of the block comment.
+							if (ending := line.find('*/')) != -1:
+								line = line[:ending]
+
+							# Determine indent level.
+							original_line_indent = len(line) - len(line.lstrip('\t'))
+
+							# Determine global indent.
+							is_comment = line.strip().startswith('#')
+							nonempty   = line.strip() != ''
+							if global_indent is None and nonempty and not is_comment:
+								global_indent = original_line_indent
+
+							# Cut away the extraneous indent. It's possible that the line has less
+							# indentation than the global indentation, but we won't worry too much about that, honestly.
+							line = line.removeprefix('\t' * min(original_line_indent, global_indent or 0))
+
+							# Got line!
+							line   = line.rstrip()
+							lines += [line]
+
+						meta_directives += [types.SimpleNamespace(
+							source_file_path   = source_file_path,
+							header_line_number = header_line_number,
+							include_file_path  = include_file_path,
+							exports            = exports,
+							imports            = imports,
+							lines              = lines,
+							diagnostic_header  = diagnostic_header, # TODO Needed?
+						)]
 
 	#
-	# Check for missing exports.
+	# Process the meta-directives' exports and imports.
 	#
 
-	for meta_decl in meta_decls:
-		for symbol in meta_decl.imports:
-			if not any(symbol in other.exports for other in meta_decls):
-				raise MetaError(f'{location_of(meta_decl)} The meta-decl depends on "{symbol}" but no meta-decl exports it.')
+	all_exports = {}
 
-	################################ Evaluate Meta-Decls ################################
+	for meta_directive in meta_directives:
+		for symbol in meta_directive.exports:
 
-	initial_context = copy.deepcopy(additional_context | { 'Meta' : Meta })
-	full_context    = copy.deepcopy(initial_context)
+			if symbol in all_exports:
+				raise MetaError(f'# Multiple meta-directives export the symbol "{symbol}".') # TODO Better error message.
 
-	if tasks := [[False, meta_decl] for meta_decl in meta_decls]:
+			all_exports[symbol] = meta_directive
 
-		if not quiet:
-			if noexec:
-				print("Meta-decls that would've been evaluated:")
+	for meta_directive in meta_directives:
+		if meta_directive.imports is not None:
+			for symbol in meta_directive.imports:
+
+				if symbol not in all_exports:
+					raise MetaError(f'# Meta-directives imports "{symbol}" but no meta-directive exports that.') # TODO Better error message.
+
+				if all_exports[symbol] == meta_directive:
+					raise MetaError(f'# Meta-directives exports "{symbol}" but also imports it.') # TODO Better error message.
+
+	for meta_directive in meta_directives:
+
+		# If no exports/imports are explicitly given,
+		# then the meta-directive implicitly imports everything.
+		if not meta_directive.exports and not meta_directive.imports:
+			meta_directive.imports = set(all_exports.keys())
+
+	#
+	# Sort the #meta directives.
+	#
+
+	# Meta-directives with empty imports are always done first,
+	# because their exports will be implicitly imported to all the other meta-directives.
+	remaining_meta_directives = [d for d in meta_directives if d.imports != set()]
+	meta_directives           = [d for d in meta_directives if d.imports == set()]
+	implicit_symbols          = { symbol for meta_directive in meta_directives for symbol in meta_directive.exports }
+	current_symbols           = set(implicit_symbols)
+
+	while remaining_meta_directives:
+
+		# Find next meta-directive that has all of its imports satisfied.
+		next_directivei, next_directive = next((
+			(i, meta_directive)
+			for i, meta_directive in enumerate(remaining_meta_directives)
+			if meta_directive.imports is None or all(symbol in current_symbols for symbol in meta_directive.imports)
+		), (None, None))
+
+		if next_directivei is None:
+			raise MetaError(f'# Meta-directive has a circular import dependency.') # TODO Better error message.
+
+		current_symbols |=  next_directive.exports
+		meta_directives += [next_directive]
+		del remaining_meta_directives[next_directivei]
+
+	#
+	# Generate the Meta Python script.
+	#
+
+	output_dir_path.mkdir(parents=True)
+
+	meta_py = []
+
+	# Additional context.
+	meta_py += ['import MetaPreprocessor']
+	meta_py += ["__META_GLOBALS__ = { 'Meta' : MetaPreprocessor.Meta() }"]
+	meta_py += ['']
+
+	for meta_directive in meta_directives:
+
+		meta_directive_args  = []
+
+		# Indicate where the #meta directive came from.
+		meta_py += [f'# {meta_directive.source_file_path}:{meta_directive.header_line_number}.']
+
+		# If the #meta directive has a #include directive associated with it, provide the include file path and line number.
+		meta_directive_args += [f"'{meta_directive.include_file_path}'"   if meta_directive.include_file_path is not None else None]
+		meta_directive_args += [    meta_directive.header_line_number - 1 if meta_directive.include_file_path is not None else None]
+
+		# Provide the name of the symbols that the Python snippet will define.
+		meta_directive_args += [f'[{', '.join(f"'{symbol}'" for symbol in meta_directive.exports)}]']
+
+		# The meta-directive explicitly has no imports.
+		if meta_directive.imports == set():
+			actual_imports = set()
+
+		# The meta-directive lists its imports or have them be implicit given.
+		else:
+			actual_imports = (meta_directive.imports or set()) | implicit_symbols
+
+		# Provide the name of the symbols that the Python snippet will be able to use.
+		meta_directive_args += [f'[{', '.join(f"'{symbol}'" for symbol in actual_imports)}]']
+
+		# Pass the dictionary containing all of the currently exported symbols so far.
+		meta_directive_args += ['__META_GLOBALS__']
+
+		# All Python snippets are in the context of a function for scoping reasons.
+		# The @MetaDirective will also automatically set up the necesary things to
+		# execute the Python snippet and output the generated code.
+		meta_py += [f"@MetaPreprocessor.MetaDirective({', '.join(map(str, meta_directive_args))})"]
+		meta_py += [f'def __META__():']
+
+		# List the things that the function is expected to define in the global namespace.
+		if meta_directive.exports:
+			meta_py += [f'\tglobal {', '.join(meta_directive.exports)}']
+
+		# If the #meta directive has no code and doesn't export anything,
+		# the function would end up empty, which is invalid Python syntax;
+		# having a `pass` is a simple fix for this edge case.
+		if not any(line.strip() for line in meta_directive.lines) and not meta_directive.exports:
+			meta_py += ['\tpass']
+
+		# Inject the #meta directive's Python snippet.
+		meta_py += ['']
+		meta_directive.meta_py_line_number = len(meta_py) + 1
+		for line in meta_directive.lines:
+			meta_py += [f'\t{line}' if line else '']
+		meta_py += ['']
+
+	meta_py = '\n'.join(meta_py) + '\n'
+
+	# Output the Meta Python script for debuggability.
+	pathlib.Path(meta_py_file_path).parent.mkdir(parents=True, exist_ok=True)
+	open(meta_py_file_path, 'w').write(meta_py)
+
+	#
+	# Execute the Meta Python file.
+	#
+
+	try:
+		exec(meta_py, {}, {})
+
+	except Exception as err:
+
+		#
+		# Determine the line numbers within the original source file containing the meta-directives.
+		#
+
+		diagnostic_tracebacks = []
+
+		match err:
+
+			case builtins.SyntaxError() | builtins.IndentationError():
+				diagnostic_line_number = err.lineno
+				assert False # TODO.
+
+			case _:
+
+				# Get the traceback for the exception.
+				diagnostic_tracebacks = traceback.extract_tb(sys.exc_info()[2])
+
+				# We only care what happens after we begin executing the meta-directive's Python snippet.
+				while diagnostic_tracebacks and diagnostic_tracebacks[0].name != '__META__':
+					del diagnostic_tracebacks[0]
+
+				# Narrow down the details.
+				diagnostic_tracebacks = [(tb.filename, tb.name, tb.lineno) for tb in diagnostic_tracebacks]
+
+		if not diagnostic_tracebacks:
+			raise err
+
+		#
+		#
+		#
+
+		diagnostics = ''
+
+		for origin, function_name, line_number in diagnostic_tracebacks:
+
+			if origin == '<string>':
+
+				diagnostic_directive = next((
+					meta_directive
+					for meta_directive in meta_directives
+					if 0 <= line_number - meta_directive.meta_py_line_number <= len(meta_directive.lines)
+				), None)
+
+				assert diagnostic_directive is not None
+
+				diagnostic_line_number = diagnostic_directive.header_line_number + 1 + (line_number - diagnostic_directive.meta_py_line_number)
+				diagnostic_header      = f'# [{diagnostic_directive.source_file_path}:{diagnostic_line_number}]'
+
+				diagnostic_lines   = diagnostic_directive.lines
+				actual_line_number = line_number - diagnostic_directive.meta_py_line_number + 1
+
 			else:
-				print('Meta-decls evaluated:')
+				diagnostic_header  = f'# [{pathlib.Path(origin).absolute().relative_to(pathlib.Path.cwd(), walk_up=True).parent}:{line_number}]'
+				diagnostic_lines   = open(origin, 'r').read().splitlines()
+				actual_line_number = line_number
 
-		# Still got some meta-decl left to execute?
-		while any(not executed for executed, meta_decl in tasks):
+			DIAGNOSTIC_WINDOW_SPAN = 2
+			diagnostic_lines       = diagnostic_lines[max(actual_line_number - 1 - DIAGNOSTIC_WINDOW_SPAN, 0):]
+			diagnostic_lines       = diagnostic_lines[:min(DIAGNOSTIC_WINDOW_SPAN * 2 + 1, len(diagnostic_lines))]
 
-			deadend = True
+			diagnostics += '#' * 64 + '\n'
+			diagnostics += '\n'.join(diagnostic_lines) + '\n'
+			diagnostics += '#' * 64 + '\n'
+			diagnostics += f'{diagnostic_header} {function_name if function_name != '__META__' else 'Meta-directive root'}.\n\n'
 
-			for task_index, (executed, meta_decl) in enumerate(tasks):
+		#
+		# Determine the reason for the exception.
+		#
 
-				# No need to evaluate the meta-decl again.
-				if executed:
-					continue
+		match err:
 
-				# There's still some unsatisfied dependencies.
-				if not all(symbol in full_context for symbol in meta_decl.imports):
-					continue
+			case builtins.SyntaxError():
+				diagnostic_message = f'Syntax error: {err.text.strip()}'
 
-				if not quiet:
-					print(f'\t{location_of(meta_decl)} {', '.join(meta_decl.exports)}')
+			case builtins.NameError():
+				diagnostic_message = f'Name error: {err}.' # TODO Better error message.
 
-				# Skip evaluation.
-				if noexec:
-					continue
+			case builtins.KeyError():
+				diagnostic_message = f'Key error: {err}.' # TODO Better error message.
 
-				# Execute meta-decl with the necessary context.
-				tasks[task_index][0] = True
-				deadend              = False
-				gbls                 = copy.deepcopy(initial_context | { symbol : full_context[symbol] for symbol in meta_decl.imports })
-				execute(meta_decl, gbls)
+			case builtins.AssertionError():
+				diagnostic_message = err.args[0] if err.args else f'Assertion failed!'
 
-				# Process the execution's resulting global namespace.
-				for gbl, value in gbls.items():
+			case MetaError():
+				if err.undefined_exported_symbol is not None:
+					diagnostic_message = f'Meta-directive did not define "{err.undefined_exported_symbol}"!' # TODO Better error message.
+				else:
+					diagnostic_message = f'{err}.' # TODO Better error message.
 
-					# Ignore certain globals that were already a part of the context.
-					if gbl == '__builtins__' or gbl in initial_context or gbl in meta_decl.imports:
-						continue
+			case _:
+				diagnostic_message = f'({type(err)}) {err}.'
 
-					# Export global into the full context.
-					if gbl in meta_decl.exports:
-						full_context[gbl] = value
+		#
+		# Report the exception.
+		#
 
-				# Ensure all exports were found.
-				for symbol in meta_decl.exports:
-					if symbol not in full_context:
-						raise MetaError(f'{location_of(meta_decl)} Missing definition for exported symbol "{symbol}".')
+		diagnostics = diagnostics.rstrip() + '\n'
+		diagnostics += f'# {diagnostic_message}'
 
-			# No meta-decl managed to execute? Must be some sort of circular dependency!
-			if not noexec and deadend:
-				for executed, meta_decl in tasks:
-					if unsatisfied_symbols := [f'"{symbol}"' for symbol in meta_decl.imports if symbol not in full_context]:
-						raise MetaError(f'{location_of(meta_decl)} Unsatisfiable import encountered (likely due to circular dependencies): {', '.join(unsatisfied_symbols)}.')
-
-			if noexec:
-				break
-
-	elif not quiet:
-		print('No meta-decls found.')
-
-	################################ Evaluate Meta-Includes ################################
-
-	os.makedirs(output_dir_path, exist_ok=True) # Make output directory.
-
-	if meta_includes:
-
-		if not quiet:
-			if noexec:
-				print("Meta-includes that would've been evaluated:")
-			else:
-				print('Meta-includes evaluated:')
-
-		for meta_include in meta_includes:
-
-			if not quiet:
-				print(f'\t{location_of(meta_include)} "{meta_include.output_file_path}"')
-
-			# Skip evaluation.
-			if noexec:
-				continue
-
-			# Execute.
-			Meta.string       = ''
-			Meta.indent       = 0
-			Meta.overloads    = {}
-			Meta.within_macro = False
-			if not noexec:
-				execute(meta_include, copy.deepcopy(full_context))
-
-			# Format generated code.
-			generated   = Meta.string
-			Meta.string = ''
-
-			# Some info about the generated code.
-			if output_receipt:
-				Meta.line(f'// {location_of(meta_include)} {datetime.datetime.now()}.')
-
-			# Put any overloaded macros first.
-			if Meta.overloads:
-				if Meta.string:
-					Meta.line()
-				for macro_name, (arg_names, determiner_names, nondeterminer_names) in Meta.overloads.items():
-					Meta.define(f'{macro_name}({', '.join(arg_names)})', f'_{macro_name}__##{'##'.join(determiner_names)}({', '.join(nondeterminer_names)})')
-
-			# Insert rest of the code that was generated.
-			if generated:
-				if Meta.string:
-					Meta.line()
-				Meta.line(generated)
-
-			# Save generated code.
-			open(meta_include.output_file_path, 'w').write(Meta.string)
-
-	elif not quiet:
-		print('No meta-includes found.')
+		raise MetaError(diagnostics) from err

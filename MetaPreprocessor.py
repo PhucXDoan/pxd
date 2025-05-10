@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-import pathlib, types, contextlib, re, traceback, builtins, sys, enum, copy
+import pathlib, types, contextlib, re, traceback, builtins, sys, copy
 
 ################################################################ Helpers ################################################################
 
@@ -9,103 +9,124 @@ def Str(x):
 		case float () : return str(int(x) if x.is_integer() else x)
 		case _        : return str(x)
 
-class Obj: # TODO Improve.
+class Obj:
 
-	def __init__(self, dct=None, **fields):
-		assert dct is None or not fields, \
-			'Obj has both an argument and kwargs; likely a mistake?'
-		for key, value in (fields if dct is None else dct).items():
+	def __init__(self, value=None, **fields):
+
+		if value is not None and fields:
+			raise ValueError('Obj should either initialized from a value or by keyword arguments.')
+
+		match value:
+			case None   : key_values = fields.items()
+			case dict() : key_values = value.items()
+			case _      : raise TypeError(f"Can't make an Obj from a {type(value)}: {value}.")
+
+		for key, value in key_values:
 			self.__dict__[key] = value
 
 	def __getattr__(self, key):
-		assert key in ('__deepcopy__', '__setstate__'), \
-			f'The Obj has no field (.{key}) to read.'
-		raise AttributeError
+		raise AttributeError(f'No field (.{key}) to read.')
 
 	def __setattr__(self, key, value):
-		assert key in self.__dict__, \
-			f'The Obj has no field (.{key}) to write.'
-		self.__dict__[key] = value
+		if key in self.__dict__:
+			self.__dict__[key] = value
+		else:
+			raise AttributeError(f'No field (.{key}) to write.')
 
 	def __getitem__(self, key):
-		assert key in self.__dict__, \
-			f'The Obj has no field [`{key}`] to read.'
-		return self.__dict__[key]
+		if key in self.__dict__:
+			return self.__dict__[key]
+		else:
+			raise KeyError(f'No field ["{key}"] to read.')
 
 	def __setitem__(self, key, value):
-		assert key in self.__dict__, \
-			f'The Obj has no field [`{key}`] to write.'
-		self.__dict__[key] = value
-		return value
+		if key in self.__dict__:
+			self.__dict__[key] = value
+			return value
+		else:
+			raise KeyError(f'No field ["{key}"] to write.')
 
 	def __iter__(self):
 		for name, value in self.__dict__.items():
 			yield (name, value)
 
 	def __repr__(self):
-		return f'Obj({ ', '.join(f'{k} = {v}' for k, v in self) })'
+		return f'Obj({ ', '.join(f'{k}={v}' for k, v in self) })'
 
 	def __contains__(self, key):
 		return key in self.__dict__
 
-class AddOn:
+class Record:
 
-	def __init__(self, dct=None, **fields):
-		assert dct is None or not fields, \
-			'AddOn has both an argument and kwargs; likely a mistake?'
-		for key, value in (fields if dct is None else dct).items():
+	def __init__(self, value=None, **fields):
+
+		if value is not None and fields:
+			raise ValueError('Record should either initialized from a value or by keyword arguments.')
+
+		match value:
+			case None   : key_values = fields.items()
+			case dict() : key_values = value.items()
+			case _      : raise TypeError(f"Can't make a Record from a {type(value)}: {value}.")
+
+		for key, value in key_values:
 			self.__dict__[key] = value
 
 	def __getattr__(self, key):
-		assert key in ('__deepcopy__', '__setstate__'), \
-			f'The AddOn has no field (.{key}) to read.'
-		raise AttributeError
+		raise AttributeError(f'No field (.{key}) to read.')
 
 	def __setattr__(self, key, value):
-		assert key not in self.__dict__, \
-			f'The AddOn has field (.{key}) already.'
-		self.__dict__[key] = value
+		if key in self.__dict__:
+			raise AttributeError(f'Field (.{key}) already exists.')
+		else:
+			self.__dict__[key] = value
 
 	def __getitem__(self, key):
-		assert key in self.__dict__, \
-			f'The AddOn has no field [`{key}`] to read.'
-		return self.__dict__[key]
+		if key in self.__dict__:
+			return self.__dict__[key]
+		else:
+			raise KeyError(f'No field ["{key}"] to read.')
 
 	def __setitem__(self, key, value):
-		assert key not in self.__dict__, \
-			f'The  has field [`{key}`] already.'
-		self.__dict__[key] = value
-		return value
+		if key in self.__dict__:
+			raise KeyError(f'Field ["{key}"] already exists.')
+		else:
+			self.__dict__[key] = value
+			return value
 
 	def __iter__(self):
 		for name, value in self.__dict__.items():
 			yield (name, value)
 
 	def __repr__(self):
-		return f'AddOn({ ', '.join(f'{k} = {v}' for k, v in self) })'
+		return f'Record({ ', '.join(f'{k}={v}' for k, v in self) })'
 
 	def __contains__(self, key):
 		return key in self.__dict__
 
 	def __or__(self, other):
-		match other:
-			case dict():
-				for key, value in other.items():
-					self.__setitem__(key, value)
-				return self
-			case Obj():
-				for key, value in other:
-					self.__setitem__(key, value)
-				return self
-			case _:
-				assert False, f'This operation is not supported on this type.'
 
-def Table(header, *entries): # TODO Improve.
+		match other:
+			case dict() : key_values = other.items()
+			case Obj()  : key_values = other
+			case _:
+				raise TypeError(f'Record cannot be combined with a {type(other)}: {other}.')
+
+		for key, value in key_values:
+			self.__setitem__(key, value)
+
+		return self
+
+def Table(header, *entries):
 
 	table = []
 
-	for entry in entries:
+	for entryi, entry in enumerate(entries):
+
 		if entry is not None: # Allows for an entry to be easily omitted.
+
+			if len(entry) != len(header):
+				raise ValueError(f'Row {entryi + 1} has {len(entry)} entries but the header defines {len(header)} columns.')
+
 			table += [Obj(**dict(zip(header, entry)))]
 
 	return table

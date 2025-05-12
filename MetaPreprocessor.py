@@ -562,9 +562,40 @@ class Meta:
 		return decorator
 
 
-def MetaDirective(include_file_path, include_directive_line_number, exports, imports, meta_globals):
+def MetaDirective(
+	index,
+	source_file_path,
+	header_line_number,
+	include_file_path,
+	include_directive_line_number,
+	exports,
+	imports,
+	meta_globals,
+	*,
+	callback=None,
+	meta_directives,
+):
 	def decorator(function):
 		nonlocal meta_globals
+
+		#
+		# Start of callback.
+		#
+
+		if callback is None:
+			callback_iterator = None
+		else:
+			callback_iterator = callback(
+				index,
+				source_file_path,
+				header_line_number,
+				include_file_path,
+				include_directive_line_number,
+				exports,
+				imports,
+				meta_directives,
+			)
+			next(callback_iterator)
 
 		#
 		# Determine the global namespace.
@@ -611,6 +642,22 @@ def MetaDirective(include_file_path, include_directive_line_number, exports, imp
 
 			meta_globals[symbol] = function_globals[symbol]
 
+		#
+		# End of callback.
+		#
+
+		if callback is not None:
+
+			stopped = False
+
+			try:
+				next(callback_iterator)
+			except StopIteration:
+				stopped = True
+
+			if not stopped:
+				raise RuntimeError('Callback did not return.')
+
 	return decorator
 
 ################################################################ Meta-Preprocessor. ################################################################
@@ -619,6 +666,7 @@ def do(*,
 	output_dir_path,
 	meta_py_file_path = None,
 	source_file_paths,
+	callback = None,
 ):
 
 	#
@@ -859,15 +907,16 @@ def do(*,
 
 	# Additional context.
 	meta_py += ['import MetaPreprocessor']
-	meta_py += ["__META_GLOBALS__ = { 'Meta' : MetaPreprocessor.Meta() }"]
 	meta_py += ['']
 
-	for meta_directive in meta_directives:
+	for meta_directivei, meta_directive in enumerate(meta_directives):
 
 		meta_directive_args  = []
 
-		# Indicate where the #meta directive came from.
-		meta_py += [f'# {meta_directive.source_file_path}:{meta_directive.header_line_number}.']
+		# Indicate where the nth #meta directive came from.
+		meta_directive_args += [    meta_directivei                   ]
+		meta_directive_args += [f"'{meta_directive.source_file_path}'"]
+		meta_directive_args += [    meta_directive.header_line_number ]
 
 		# If the #meta directive has a #include directive associated with it, provide the include file path and line number.
 		meta_directive_args += [f"'{meta_directive.include_file_path}'"   if meta_directive.include_file_path is not None else None]
@@ -889,6 +938,10 @@ def do(*,
 
 		# Pass the dictionary containing all of the currently exported symbols so far.
 		meta_directive_args += ['__META_GLOBALS__']
+
+		# Provide other data common to all meta-directive handling.
+		if callback:
+			meta_directive_args += ['**__META_SHARED__']
 
 		# All Python snippets are in the context of a function for scoping reasons.
 		# The @MetaDirective will also automatically set up the necesary things to
@@ -924,7 +977,19 @@ def do(*,
 	#
 
 	try:
-		exec(meta_py, {}, {})
+		exec(
+			meta_py,
+			{
+				'__META_GLOBALS__' : {
+					'Meta' : Meta(),
+				},
+				'__META_SHARED__' : {
+					'callback'        : callback,
+					'meta_directives' : meta_directives,
+				},
+			},
+			{},
+		)
 
 	except Exception as err: # TODO Better error messages.
 

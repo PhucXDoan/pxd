@@ -351,7 +351,7 @@ class Meta:
 			self.members         = members
 			self.count           = count
 
-			if members is not None:
+			if self.members is not None:
 				self.__exit__() # The list of members are already provided.
 
 
@@ -365,6 +365,8 @@ class Meta:
 
 
 		def __exit__(self, *dont_care_about_exceptions):
+
+			self.members = list(self.members)
 
 			if self.underlying_type is None:
 				enum_type = ''
@@ -710,6 +712,37 @@ def do(*,
 
 			while remaining_lines:
 
+				#
+				# See if there's an #include directive. # TODO Copy-pasted.
+				#
+
+				include_file_path = None
+				include_line      = remaining_lines[0]
+				tmp               = include_line
+				tmp               = tmp.strip()
+
+				if tmp.startswith('#include'):
+					tmp = tmp.removeprefix('#include') # TODO Technically, there can be space after the #.
+					tmp = tmp.strip()
+
+					if tmp:
+						end_quote = {
+							'<' : '>',
+							'"' : '"',
+						}.get(tmp[0], None)
+
+						if end_quote is not None and (length := tmp[1:].find(end_quote)) != -1:
+							include_file_path      = pathlib.Path(output_dir_path, tmp[1:][:length])
+							remaining_lines        = remaining_lines[1:]
+							remaining_line_number += 1
+
+				if include_file_path is None:
+					include_line = None
+
+				#
+				# See if there's a #meta.
+				#
+
 				header_line            = remaining_lines[0]
 				header_line_number     = remaining_line_number
 				remaining_lines        = remaining_lines[1:]
@@ -732,7 +765,7 @@ def do(*,
 					meta_directives += [types.SimpleNamespace(
 						source_file_path   = source_file_path,
 						header_line_number = header_line_number,
-						include_file_path  = None,
+						include_file_path  = include_file_path,
 						exports            = exports,
 						imports            = imports,
 						lines              = remaining_lines,

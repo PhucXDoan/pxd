@@ -3,7 +3,46 @@ import pathlib, types, contextlib, re, traceback, builtins, sys, copy
 
 ################################################################ Helpers ################################################################
 
-def Str(x):
+def deindent(string_or_lines):
+
+	if isinstance(string_or_lines, str):
+		# Get the lines...
+		lines = [line.rstrip() for line in string_or_lines.splitlines()]
+	else:
+		# Lines already given.
+		lines = string_or_lines
+
+	# Remove leading newlines...
+	while lines and not lines[0]:
+		del lines[0]
+
+	# Remove trailing newlines...
+	while lines and not lines[-1]:
+		del lines[-1]
+
+	# Deindent the lines...
+	global_indent = None
+	for linei, line in enumerate(lines):
+
+		# Determine line's indent level.
+		line_indent = len(line) - len(line.lstrip('\t'))
+
+		# Determine the whole string's indent level based on the first line with actual text.
+		if global_indent is None and line.strip():
+			global_indent = line_indent
+
+		# Set indents appropriately.
+		lines[linei] = line.removeprefix('\t' * min(line_indent, global_indent or 0))
+
+	# Give back the modified string.
+	if isinstance(string_or_lines, str):
+		return '\n'.join(lines)
+
+	# Give back the modified lines.
+	else:
+		return lines
+
+def cstr(x):
 	match x:
 		case bool  () : return str(x).lower()
 		case float () : return str(int(x) if x.is_integer() else x)
@@ -167,8 +206,14 @@ class Meta:
 			if self.overloads:
 				if self.output:
 					self.line()
-				for macro_name, (arg_names, determiner_names, nondeterminer_names) in self.overloads.items():
-					self.define(f'{macro_name}({', '.join(arg_names)})', f'_{macro_name}__##{'##'.join(determiner_names)}({', '.join(nondeterminer_names)})')
+				for macro_name, (arg_names, overloaded_args) in self.overloads.items():
+
+					if any(name not in overloaded_args for name in arg_names):
+						nonoverloaded_args = f'({', '.join(name for name in arg_names if name not in overloaded_args)})'
+					else:
+						nonoverloaded_args = ''
+
+					self.define(f'{macro_name}({', '.join(arg_names)})', f'_{macro_name}__##{'##'.join(overloaded_args)}{nonoverloaded_args}')
 
 			# Insert rest of the code that was generated.
 			if generated:
@@ -191,32 +236,8 @@ class Meta:
 			case _                     : raise TypeError('Input type not supported.')
 
 		for string in strings:
-
-			# Split to process each line in order to do indenting correctly for multilined input strings.
-			lines = (string + '\n').splitlines()
-
-			# Remove first empty line; useful for multilined strings.
-			if lines and lines[0].strip() == '':
-				lines = lines[1:]
-
-			# Remove last empty line; useful for multilined strings.
-			if lines and lines[-1].strip() == '':
-				lines = lines[:-1]
-
-			global_indent = None
-			for line in lines:
-
-				# Determine line's indent level.
-				line_indent = len(line) - len(line.lstrip('\t'))
-
-				# Determine the whole string's indent level based on the first line with actual text.
-				if global_indent is None and line.strip():
-					global_indent = line_indent
-
-				# Set indents appropriately.
-				line         = line.removeprefix('\t' * min(line_indent, global_indent or 0))
-				line         = '\t' * self.indent + line if line.strip() else ''
-				self.output += line + (' \\' if self.within_macro else '') + '\n'
+			for line in deindent(string).splitlines():
+				self.output += (('\t' * self.indent) + line) + (' \\' if self.within_macro else '') + '\n'
 
 	@contextlib.contextmanager
 	def enter(self, header=None, opening=None, closing=None, *, indented=None):
@@ -352,38 +373,79 @@ class Meta:
 			if self.count:
 				self.meta.line(f'enum{enum_type} {{ {self.enum_name}_COUNT = {len(self.members)} }};')
 
-	def define(self, *lhs_rhs_pairs, do_while=False):
+	def define(self, name, params_or_expansion, expansion=None, do_while=False, **overloading):
 
-		lhs, rhs = lhs_rhs_pairs
+		if overloading:
 
-		if isinstance(rhs, str) and '\n' in rhs:
-			with self.enter(f'#define {lhs}'):
-				if do_while:
-					with self.enter('do', '{', '}\nwhile (false)'):
-						self.line(rhs)
-				else:
-					self.line(rhs)
-		else:
-			expansion = Str(rhs).strip()
+			if expansion is None:
+				raise ValueError('When overloading a macro ("{name}"), a tuple of parameter names and string of expansion must be given.')
 
-			if do_while:
-				self.line(f'#define {lhs} do {{ {expansion} }} while (false)')
+			params    = params_or_expansion
+			expansion = expansion
+
+			# The parameter-list can just be a single string to represent a single argument.
+			if params is not None and not isinstance(params, tuple):
+				params = (params,)
+
+			for key in overloading:
+				if key not in params:
+					raise ValueError(f'Overloading a macro ("{name}") on "{key}", but it\'s not in the parameter-list: {params}.')
+
+			if name in self.overloads:
+				if self.overloads[name] != (params, list(overloading.keys())):
+					raise ValueError(f'Cannot overload a macro ("{name}") with differing overloaded parameters.')
 			else:
-				self.line(f'#define {lhs} {expansion}')
+				self.overloads[name] = (params, list(overloading.keys()))
 
-	def overload(self, macro_name, args, expansion):
+			if any(param not in overloading for param in params):
+				nonoverloaded = f'({', '.join(param for param in params if param not in overloading)})'
+			else:
+				nonoverloaded = ''
 
-		arg_names                           = [arg[0] if isinstance(arg, tuple) else arg for arg in args]
-		determiner_names, determiner_values = zip(*[ arg for arg in args if     isinstance(arg, tuple)])
-		nondeterminer_names                 =      [ arg for arg in args if not isinstance(arg, tuple)]
-		overload                            = (arg_names, determiner_names, nondeterminer_names)
+			self.define(f'_{name}__{'__'.join(overloading.values())}{nonoverloaded}', expansion)
 
-		if macro_name in self.overloads:
-			assert self.overloads[macro_name] == overload
 		else:
-			self.overloads[macro_name] = overload
 
-		self.define(f'_{macro_name}__{'__'.join(map(Str, determiner_values))}({', '.join(nondeterminer_names)})', expansion)
+			# Whether or not the macro has a parameter list.
+			if expansion is None:
+				params    = None
+				expansion = params_or_expansion
+			else:
+				params    = params_or_expansion
+				expansion = expansion
+
+			# The parameter-list can just be a single string to represent a single argument.
+			if params is not None and not isinstance(params, tuple):
+				params = (params,)
+
+			expansion = deindent(cstr(expansion))
+
+			if params is None:
+				macro = f'{name}'
+			else:
+				macro = f'{name}({', '.join(params)})'
+
+			# Generate macro that spans multiple lines.
+			if '\n' in expansion:
+
+				with self.enter(f'#define {macro}'):
+
+					# Generate multi-lined macro wrapped in do-while.
+					if do_while:
+						with self.enter('do', '{', '}\nwhile (false)'):
+							self.line(expansion)
+
+					# Generate unwrapped multi-lined macro.
+					else:
+						self.line(expansion)
+
+			# Generate single-line macro wrapped in do-while.
+			elif do_while:
+				self.line(f'#define {macro} do {{ {expansion} }} while (false)')
+
+			# Generate unwrapped single-line macro.
+			else:
+				self.line(f'#define {macro} {expansion}')
 
 	def ifs(self, xs, *, style):
 
@@ -598,9 +660,8 @@ def do(*,
 						# Get lines of the block comment.
 						#
 
-						lines         = []
-						global_indent = None
-						ending        = -1
+						lines  = []
+						ending = -1
 
 						while ending == -1:
 
@@ -616,22 +677,11 @@ def do(*,
 							if (ending := line.find('*/')) != -1:
 								line = line[:ending]
 
-							# Determine indent level.
-							original_line_indent = len(line) - len(line.lstrip('\t'))
-
-							# Determine global indent.
-							is_comment = line.strip().startswith('#')
-							nonempty   = line.strip() != ''
-							if global_indent is None and nonempty and not is_comment:
-								global_indent = original_line_indent
-
-							# Cut away the extraneous indent. It's possible that the line has less
-							# indentation than the global indentation, but we won't worry too much about that, honestly.
-							line = line.removeprefix('\t' * min(original_line_indent, global_indent or 0))
-
 							# Got line!
 							line   = line.rstrip()
 							lines += [line]
+
+						lines = deindent(lines)
 
 						meta_directives += [types.SimpleNamespace(
 							source_file_path   = source_file_path,

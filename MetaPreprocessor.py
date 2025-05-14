@@ -3,7 +3,7 @@ import pathlib, types, contextlib, re, traceback, builtins, sys, copy
 
 ################################################################ Helper Functions. ################################################################
 
-def deindent(lines_or_a_string):
+def deindent(lines_or_a_string, newline_strip=True):
 
 	if isinstance(lines_or_a_string, str):
 		# Get the lines.
@@ -13,13 +13,11 @@ def deindent(lines_or_a_string):
 		lines = lines_or_a_string
 
 
-	# Remove leading newlines.
-	while lines and not lines[0]:
-		del lines[0]
+	# Remove leading and trailing newlines.
+	if newline_strip:
+		while lines and not lines[ 0]: del lines[ 0]
+		while lines and not lines[-1]: del lines[-1]
 
-	# Remove trailing newlines.
-	while lines and not lines[-1]:
-		del lines[-1]
 
 	# Deindent the lines.
 	global_indent = None
@@ -861,7 +859,7 @@ def do(*,
 							line   = line.rstrip()
 							lines += [line]
 
-						lines = deindent(lines)
+						lines = deindent(lines, newline_strip=False)
 
 						meta_directives += [types.SimpleNamespace(
 							source_file_path   = source_file_path,

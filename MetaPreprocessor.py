@@ -53,15 +53,15 @@ def cstr(x):
 
 class Obj:
 
-	def __init__(self, value=None, **fields):
+	def __init__(self, __value=None, **fields):
 
-		if value is not None and fields:
+		if __value is not None and fields:
 			raise ValueError('Obj should either initialized from a value or by keyword arguments.')
 
-		match value:
+		match __value:
 			case None   : key_values = fields.items()
-			case dict() : key_values = value.items()
-			case _      : raise TypeError(f"Can't make an Obj from a {type(value)}: {value}.")
+			case dict() : key_values = __value.items()
+			case _      : raise TypeError(f"Can't make an Obj from a {type(__value)}: {__value}.")
 
 		for key, value in key_values:
 			self.__dict__[key] = value
@@ -108,15 +108,15 @@ class Obj:
 
 class Record:
 
-	def __init__(self, value=None, **fields):
+	def __init__(self, __value=None, **fields):
 
-		if value is not None and fields:
+		if __value is not None and fields:
 			raise ValueError('Record should either initialized from a value or by keyword arguments.')
 
-		match value:
+		match __value:
 			case None   : key_values = fields.items()
-			case dict() : key_values = value.items()
-			case _      : raise TypeError(f"Can't make a Record from a {type(value)}: {value}.")
+			case dict() : key_values = __value.items()
+			case _      : raise TypeError(f"Can't make a Record from a {type(__value)}: {__value}.")
 
 		for key, value in key_values:
 			self.__dict__[key] = value

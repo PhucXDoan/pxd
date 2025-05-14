@@ -989,7 +989,7 @@ def do(*,
 		# If the #meta directive has no code and doesn't export anything,
 		# the function would end up empty, which is invalid Python syntax;
 		# having a `pass` is a simple fix for this edge case.
-		if not any(line.strip() for line in meta_directive.lines) and not meta_directive.exports:
+		if not any(line.strip() and line.strip()[0] != '#' for line in meta_directive.lines) and not meta_directive.exports:
 			meta_py += ['\tpass']
 
 		# Inject the #meta directive's Python snippet.

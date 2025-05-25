@@ -24,14 +24,14 @@ def deindent(lines_or_a_string, newline_strip=True):
     for linei, line in enumerate(lines):
 
         # Determine line's indent level.
-        line_indent = len(line) - len(line.lstrip('\t'))
+        line_indent = len(line) - len(line.lstrip(' '))
 
         # Determine the whole text's indent level based on the first line with actual text.
         if global_indent is None and line.strip():
             global_indent = line_indent
 
         # Set indents appropriately.
-        lines[linei] = line.removeprefix('\t' * min(line_indent, global_indent or 0))
+        lines[linei] = line.removeprefix(' ' * min(line_indent, global_indent or 0))
 
 
     if isinstance(lines_or_a_string, str):
@@ -206,8 +206,9 @@ class Meta:
         self.include_file_path = None
 
 
-    def _start(self, include_file_path, include_directive_line_number):
+    def _start(self, include_file_path, source_file_path, include_directive_line_number):
         self.include_file_path             = include_file_path
+        self.source_file_path              = source_file_path
         self.include_directive_line_number = include_directive_line_number
         self.__dict__['output']            = ''
         self.__dict__['indent']            = 0
@@ -217,7 +218,11 @@ class Meta:
 
     def __setattr__(self, key, value):
 
-        if key not in ('include_file_path', 'include_directive_line_number') and self.__dict__['include_file_path'] is None:
+        if key not in (
+            'include_file_path',
+            'source_file_path',
+            'include_directive_line_number'
+        ) and self.__dict__['include_file_path'] is None:
             raise RuntimeError(f"The meta-directive needs to have an include-directive to use Meta.")
 
         self.__dict__[key] = value
@@ -234,7 +239,7 @@ class Meta:
         self.output = ''
 
         # Indicate origin of the meta-directive in the generated output.
-        self.line(f'// [{self.include_file_path}:{self.include_directive_line_number}].')
+        self.line(f'// [{self.source_file_path}:{self.include_directive_line_number}].')
 
         # Put any overloaded macros first.
         if self.overloads:
@@ -273,8 +278,11 @@ class Meta:
             case _                     : raise TypeError('Input type not supported.')
 
         for string in strings:
-            for line in deindent(string).splitlines():
-                self.output += (('\t' * self.indent) + line) + (' \\' if self.within_macro else '') + '\n'
+
+            deindented_string = deindent(string)
+
+            for line in deindented_string.splitlines():
+                self.output += (((' ' * 4 * self.indent) + line) + (' \\' if self.within_macro else '')).rstrip() + '\n'
 
 
     @contextlib.contextmanager
@@ -627,7 +635,7 @@ def MetaDirective(
         # Execute the meta-directive.
         #
 
-        function_globals['Meta']._start(include_file_path, include_directive_line_number)
+        function_globals['Meta']._start(include_file_path, source_file_path, include_directive_line_number)
         types.FunctionType(function.__code__, function_globals)()
         function_globals['Meta']._end()
 
@@ -932,7 +940,7 @@ def do(*,
     # Generate the Meta Python script.
     #
 
-    output_dir_path.mkdir(parents=True)
+    output_dir_path.mkdir(parents=True, exist_ok=True)
 
     meta_py = []
 
@@ -982,19 +990,19 @@ def do(*,
 
         # List the things that the function is expected to define in the global namespace.
         if meta_directive.exports:
-            meta_py += [f'\tglobal {', '.join(meta_directive.exports)}']
+            meta_py += [f'    global {', '.join(meta_directive.exports)}']
 
         # If the #meta directive has no code and doesn't export anything,
         # the function would end up empty, which is invalid Python syntax;
         # having a `pass` is a simple fix for this edge case.
         if not any(line.strip() and line.strip()[0] != '#' for line in meta_directive.lines) and not meta_directive.exports:
-            meta_py += ['\tpass']
+            meta_py += ['    pass']
 
         # Inject the #meta directive's Python snippet.
         meta_py += ['']
         meta_directive.meta_py_line_number = len(meta_py) + 1
         for line in meta_directive.lines:
-            meta_py += [f'\t{line}' if line else '']
+            meta_py += [f'    {line}' if line else '']
         meta_py += ['']
 
     meta_py = '\n'.join(meta_py) + '\n'
@@ -1082,7 +1090,7 @@ def do(*,
                 actual_line_number = line_number - diagnostic_directive.meta_py_line_number + 1
 
             else:
-                diagnostic_header  = f'# [{pathlib.Path(origin).absolute().relative_to(pathlib.Path.cwd(), walk_up=True).parent}:{line_number}]'
+                diagnostic_header  = f'# [{pathlib.Path(origin).absolute().relative_to(pathlib.Path.cwd(), walk_up=True)}:{line_number}]'
                 diagnostic_lines   = open(origin, 'r').read().splitlines()
                 actual_line_number = line_number
 
@@ -1108,7 +1116,7 @@ def do(*,
                 diagnostic_message = f'Error: {str(err).removesuffix('.')}.'
 
             case builtins.AssertionError():
-                diagnostic_message = err.args[0] if err.args else f'Assertion failed!'
+                diagnostic_message = f'Assertion failed! : {err.args[0]}' if err.args else f'Assertion failed!'
 
             case MetaError():
                 if err.undefined_exported_symbol is not None:

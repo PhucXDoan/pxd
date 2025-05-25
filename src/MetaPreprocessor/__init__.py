@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 import pathlib, types, contextlib, re, traceback, builtins, sys, copy
 
 ################################################################ Helper Functions. ################################################################

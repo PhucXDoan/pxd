@@ -1,4 +1,4 @@
-Copyright (c) 2024 Phuc X. Doan
+Copyright (c) 2025 Phuc X. Doan
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal

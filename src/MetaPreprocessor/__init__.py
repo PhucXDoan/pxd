@@ -12,10 +12,9 @@ def deindent(lines_or_a_string, newline_strip=True):
         lines = lines_or_a_string
 
 
-    # Remove leading and trailing newlines.
-    if newline_strip:
-        while lines and not lines[ 0]: del lines[ 0]
-        while lines and not lines[-1]: del lines[-1]
+    # Remove the leading newline; makes the output look closer to the multilined Python string.
+    if newline_strip and lines and not lines[0].strip():
+        del lines[0]
 
 
     # Deindent the lines.

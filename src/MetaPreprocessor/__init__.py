@@ -1,5 +1,10 @@
 import pathlib, types, contextlib, re, traceback, builtins, sys, copy
 
+# TODO Converting Obj to Record and vice-versa.
+# TODO Better error message when NameError refers to an export.
+# TODO __setitem__ error is double quoted.
+# TODO Meta-directive that makes a file but doesn't immediately include it.
+
 ################################################################ Helper Functions. ################################################################
 
 def deindent(lines_or_a_string, newline_strip=True):
@@ -266,7 +271,7 @@ class Meta:
         open(self.include_file_path, 'w').write(self.output)
 
 
-    def line(self, input):
+    def line(self, input): # TODO More consistent trimming of newlines.
 
         strings = []
 
@@ -944,9 +949,6 @@ def do(*,
     meta_py = []
 
     # Additional context.
-    meta_py += ['import MetaPreprocessor']
-    meta_py += ['']
-
     for meta_directivei, meta_directive in enumerate(meta_directives):
 
         meta_directive_args  = []
@@ -984,7 +986,7 @@ def do(*,
         # All Python snippets are in the context of a function for scoping reasons.
         # The @MetaDirective will also automatically set up the necesary things to
         # execute the Python snippet and output the generated code.
-        meta_py += [f"@MetaPreprocessor.MetaDirective({', '.join(map(str, meta_directive_args))})"]
+        meta_py += [f"@MetaDirective({', '.join(map(str, meta_directive_args))})"]
         meta_py += [f'def __META__():']
 
         # List the things that the function is expected to define in the global namespace.
@@ -1018,6 +1020,7 @@ def do(*,
         exec(
             meta_py,
             {
+                'MetaDirective' : MetaDirective,
                 '__META_GLOBALS__' : {
                     'Meta' : Meta(),
                 },

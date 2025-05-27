@@ -1,8 +1,5 @@
 import pathlib, types, contextlib, re, traceback, builtins, sys, copy
 
-# TODO Better error message when NameError refers to an export.
-# TODO __setitem__ error is double quoted.
-
 ################################################################ Helper Functions. ################################################################
 
 def deindent(lines_or_a_string, newline_strip=True):
@@ -83,7 +80,7 @@ class Obj:
         if key in self.__dict__:
             return self.__dict__[key]
         else:
-            raise KeyError(f'No field ["{key}"] to read.')
+            raise AttributeError(f'No field ["{key}"] to read.')
 
 
     def __setitem__(self, key, value):
@@ -91,7 +88,7 @@ class Obj:
             self.__dict__[key] = value
             return value
         else:
-            raise KeyError(f'No field ["{key}"] to write.')
+            raise AttributeError(f'No field ["{key}"] to write.')
 
 
     def __iter__(self):
@@ -139,12 +136,12 @@ class Record:
         if key in self.__dict__:
             return self.__dict__[key]
         else:
-            raise KeyError(f'No field ["{key}"] to read.')
+            raise AttributeError(f'No field ["{key}"] to read.')
 
 
     def __setitem__(self, key, value):
         if key in self.__dict__:
-            raise KeyError(f'Field ["{key}"] already exists.')
+            raise AttributeError(f'Field ["{key}"] already exists.')
         else:
             self.__dict__[key] = value
             return value
@@ -1132,8 +1129,20 @@ def do(*,
             case builtins.SyntaxError():
                 diagnostic_message = f'Syntax error: {err.text.strip()}'
 
-            case builtins.NameError() | builtins.KeyError() | builtins.ValueError():
-                diagnostic_message = f'Error: {str(err).removesuffix('.')}.'
+            # TODO Better error message when NameError refers to an export.
+            case builtins.NameError():
+                diagnostic_message = f'Name Error: {str(err).removesuffix('.')}.'
+
+            case builtins.AttributeError():
+                diagnostic_message = f'Attribute Error: {str(err).removesuffix('.')}.'
+
+            # Note that the KeyError message is single-quoted when stringified,
+            # because the message itself should just be the key that was used that resulted in the exception.
+            case builtins.KeyError():
+                diagnostic_message = f'Key Error: {str(err)}.'
+
+            case  builtins.ValueError():
+                diagnostic_message = f'Value Error: {str(err).removesuffix('.')}.'
 
             case builtins.AssertionError():
                 diagnostic_message = f'Assertion failed! : {err.args[0]}' if err.args else f'Assertion failed!'

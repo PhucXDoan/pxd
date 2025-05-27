@@ -3,7 +3,6 @@ import pathlib, types, contextlib, re, traceback, builtins, sys, copy
 # TODO Converting Obj to Record and vice-versa.
 # TODO Better error message when NameError refers to an export.
 # TODO __setitem__ error is double quoted.
-# TODO Meta-directive that makes a file but doesn't immediately include it.
 
 ################################################################ Helper Functions. ################################################################
 
@@ -712,6 +711,44 @@ def do(*,
             } if port is not None else None for port in ports
         ]
 
+    def breakdown_include_directive_line(line):
+
+        #
+        # It's fine if the line is commented.
+        #
+
+        line = line.strip()
+        if   line.startswith('//'): line = line.removeprefix('//')
+        elif line.startswith('/*'): line = line.removeprefix('/*')
+
+        #
+        # Check if the line has an include directive.
+        #
+
+        if not (line := line.strip()).startswith('#'):
+            return None
+        line = line.removeprefix('#')
+
+        if not (line := line.strip()).startswith('include'):
+            return None
+        line = line.removeprefix('include')
+
+        if not (line := line.strip()):
+            return None
+
+        if (end_quote := {
+            '<' : '>',
+            '"' : '"',
+        }.get(line[0], None)) is None:
+            return None
+
+        if (length := line[1:].find(end_quote)) == -1:
+            return None
+
+        include_file_path = pathlib.Path(output_dir_path, line[1:][:length])
+
+        return include_file_path
+
     for source_file_path in source_file_paths:
 
         remaining_lines       = open(source_file_path, 'rb').read().decode('UTF-8').splitlines()
@@ -723,31 +760,15 @@ def do(*,
             while remaining_lines:
 
                 #
-                # See if there's an #include directive. # TODO Copy-pasted.
+                # See if there's an #include directive.
                 #
 
-                include_file_path = None
-                include_line      = remaining_lines[0]
-                tmp               = include_line
-                tmp               = tmp.strip()
+                include_line = None
 
-                if tmp.startswith('#include'):
-                    tmp = tmp.removeprefix('#include') # TODO Technically, there can be space after the #.
-                    tmp = tmp.strip()
-
-                    if tmp:
-                        end_quote = {
-                            '<' : '>',
-                            '"' : '"',
-                        }.get(tmp[0], None)
-
-                        if end_quote is not None and (length := tmp[1:].find(end_quote)) != -1:
-                            include_file_path      = pathlib.Path(output_dir_path, tmp[1:][:length])
-                            remaining_lines        = remaining_lines[1:]
-                            remaining_line_number += 1
-
-                if include_file_path is None:
-                    include_line = None
+                if (include_file_path := breakdown_include_directive_line(remaining_lines[0])) is not None:
+                    include_line           = remaining_lines[0 ]
+                    remaining_lines        = remaining_lines[1:]
+                    remaining_line_number += 1
 
                 #
                 # See if there's a #meta.
@@ -795,28 +816,12 @@ def do(*,
                 # See if there's an #include directive.
                 #
 
-                include_file_path = None
-                include_line      = remaining_lines[0]
-                tmp               = include_line
-                tmp               = tmp.strip()
+                include_line = None
 
-                if tmp.startswith('#include'):
-                    tmp = tmp.removeprefix('#include')
-                    tmp = tmp.strip()
-
-                    if tmp:
-                        end_quote = {
-                            '<' : '>',
-                            '"' : '"',
-                        }.get(tmp[0], None)
-
-                        if end_quote is not None and (length := tmp[1:].find(end_quote)) != -1:
-                            include_file_path      = pathlib.Path(output_dir_path, tmp[1:][:length])
-                            remaining_lines        = remaining_lines[1:]
-                            remaining_line_number += 1
-
-                if include_file_path is None:
-                    include_line = None
+                if (include_file_path := breakdown_include_directive_line(remaining_lines[0])) is not None:
+                    include_line           = remaining_lines[0 ]
+                    remaining_lines        = remaining_lines[1:]
+                    remaining_line_number += 1
 
                 #
                 # See if there's a block comment with #meta.
@@ -835,8 +840,8 @@ def do(*,
                 diagnostic_header += '#' * 64 + '\n'
                 diagnostic_header += f'# [{source_file_path}:{header_line_number}]'
 
-                tmp                      = header_line
-                tmp                      = tmp.strip()
+                tmp = header_line
+                tmp = tmp.strip()
                 if tmp.startswith('/*'):
                     tmp = tmp.removeprefix('/*')
                     tmp = tmp.strip()
@@ -883,8 +888,20 @@ def do(*,
                         )]
 
     #
-    # Process the meta-directives' exports and imports.
+    # Process the meta-directives' parameters.
     #
+
+    include_collisions = {}
+    for meta_directive in meta_directives:
+        if meta_directive.include_file_path is not None:
+            if (collision := include_collisions.get(meta_directive.include_file_path, None)) is None:
+                include_collisions[meta_directive.include_file_path] = meta_directive
+            else:
+                raise MetaError(
+                    f'# Meta-directives with the same output file path of "{meta_directive.include_file_path}": ' \
+                    f'[{meta_directive.source_file_path}:{meta_directive.header_line_number - 1}] and ' \
+                    f'[{collision     .source_file_path}:{collision     .header_line_number - 1}].'
+                )
 
     all_exports = {}
 

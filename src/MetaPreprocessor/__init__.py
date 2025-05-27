@@ -1,6 +1,5 @@
 import pathlib, types, contextlib, re, traceback, builtins, sys, copy
 
-# TODO Converting Obj to Record and vice-versa.
 # TODO Better error message when NameError refers to an export.
 # TODO __setitem__ error is double quoted.
 
@@ -60,9 +59,10 @@ class Obj:
             raise ValueError('Obj should either initialized from a value or by keyword arguments.')
 
         match __value:
-            case None   : key_values = fields.items()
-            case dict() : key_values = __value.items()
-            case _      : raise TypeError(f"Can't make an Obj from a {type(__value)}: {__value}.")
+            case None     : key_values = fields.items()
+            case dict()   : key_values = __value.items()
+            case Record() : key_values = __value.__dict__.items()
+            case _        : raise TypeError(f"Can't make an Obj from a {type(__value)}: {__value}.")
 
         for key, value in key_values:
             self.__dict__[key] = value
@@ -117,6 +117,7 @@ class Record:
         match __value:
             case None   : key_values = fields.items()
             case dict() : key_values = __value.items()
+            case Obj()  : key_values = __value.__dict__.items()
             case _      : raise TypeError(f"Can't make a Record from a {type(__value)}: {__value}.")
 
         for key, value in key_values:

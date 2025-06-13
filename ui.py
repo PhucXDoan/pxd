@@ -1,6 +1,8 @@
 import types, inspect, builtins, collections, enum, copy
 from ..pxd.log import log, did_you_mean
 
+# TODO Overriding subcommand names should be first verified.
+
 def factory(desc, *, name = None):
 
     def decorator(func):

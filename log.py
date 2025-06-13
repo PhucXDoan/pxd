@@ -181,9 +181,9 @@ def did_you_mean(message, given, options, ansi = None, tag = ''):
             log('"?'                             ,                        )
 
             for match in matches[1:]:
-                log(' ' * len(tag) + '           or "', end = ''               )
-                log(match                             , end = '', ansi = 'bold')
-                log('"?'                              ,                        )
+                log(' ' * len(tag) + '          or "', end = ''               )
+                log(match                            , end = '', ansi = 'bold')
+                log('"?'                             ,                        )
 
             log(' ' * len(tag) + '       I got "', end = ''               )
             log(given                            , end = '', ansi = 'bold')

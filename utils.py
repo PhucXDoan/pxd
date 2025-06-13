@@ -39,23 +39,38 @@ def nonuniques(xs):
 
     return None
 
-def ljusts(objs):
+def ljusts(objs, keys_as_headers = False): # TODO Handle when the set of keys can vary.
 
     objs = tuple(objs)
 
     def decorator(func):
 
         justs = collections.defaultdict(lambda: 0)
+        keys  = []
 
         for obj in objs:
-            for column, value in func(obj).items():
-                justs[column] = max(justs[column], len(str(value)))
+            for key, value in func(obj).items():
+
+                justs[key] = max(
+                    justs[key],
+                    len(str(value)),
+                    len(key) if keys_as_headers else 0
+                )
+
+                if key not in keys:
+                    keys += [key]
 
         def justified_func(obj):
             return {
                 key : str(value).ljust(justs[key])
                 for key, value in func(obj).items()
             }
+
+        def justified_func_row(obj):
+            return f'| {' | '.join(justified_func(obj).values())} |'
+
+        justified_func.header = f'| {' | '.join(key.ljust(justs[key]) for key in keys)} |'
+        justified_func.row    = justified_func_row
 
         return justified_func
 

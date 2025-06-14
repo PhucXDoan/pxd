@@ -968,13 +968,13 @@ def do(*,
         meta_directive_args  = []
 
         # Indicate where the nth #meta directive came from.
-        meta_directive_args += [    meta_directivei                   ]
-        meta_directive_args += [f"'{meta_directive.source_file_path}'"]
-        meta_directive_args += [    meta_directive.header_line_number ]
+        meta_directive_args += [     meta_directivei                   ]
+        meta_directive_args += [f"r'{meta_directive.source_file_path}'"]
+        meta_directive_args += [     meta_directive.header_line_number ]
 
         # If the #meta directive has a #include directive associated with it, provide the include file path and line number.
-        meta_directive_args += [f"'{meta_directive.include_file_path}'"   if meta_directive.include_file_path is not None else None]
-        meta_directive_args += [    meta_directive.header_line_number - 1 if meta_directive.include_file_path is not None else None]
+        meta_directive_args += [f"r'{meta_directive.include_file_path}'"   if meta_directive.include_file_path is not None else None]
+        meta_directive_args += [     meta_directive.header_line_number - 1 if meta_directive.include_file_path is not None else None]
 
         # Provide the name of the symbols that the Python snippet will define.
         meta_directive_args += [f'[{', '.join(f"'{symbol}'" for symbol in meta_directive.exports)}]']

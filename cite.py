@@ -39,7 +39,7 @@ def get_file_paths():
         pathlib.Path(root, file_name)
         for root, dirs, file_names in root('./').walk()
         for file_name in file_names
-        if not is_ignored(pathlib.Path(root, file_name))
+        if not pathlib.Path(root, file_name).is_dir() and not is_ignored(pathlib.Path(root, file_name))
     ]
 
 

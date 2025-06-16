@@ -701,11 +701,11 @@ def do(*,
             case _                  : raise MetaError(f'{diagnostic_header} Too many colons for meta-directive!')
 
         return [
-            {
+            dict.fromkeys(
                 symbol.strip()
                 for symbol in port.split(',')
                 if symbol.strip() # We'll be fine if there's extra commas; just remove the empty strings.
-            } if port is not None else None for port in ports
+            ) if port is not None else None for port in ports
         ]
 
     def breakdown_include_directive_line(line):
@@ -925,7 +925,7 @@ def do(*,
         # If no exports/imports are explicitly given,
         # then the meta-directive implicitly imports everything.
         if not meta_directive.exports and not meta_directive.imports:
-            meta_directive.imports = set(all_exports.keys())
+            meta_directive.imports = dict.fromkeys(all_exports.keys())
 
     #
     # Sort the #meta directives.
@@ -933,10 +933,10 @@ def do(*,
 
     # Meta-directives with empty imports are always done first,
     # because their exports will be implicitly imported to all the other meta-directives.
-    remaining_meta_directives = [d for d in meta_directives if d.imports != set()]
-    meta_directives           = [d for d in meta_directives if d.imports == set()]
-    implicit_symbols          = { symbol for meta_directive in meta_directives for symbol in meta_directive.exports }
-    current_symbols           = set(implicit_symbols)
+    remaining_meta_directives = [d for d in meta_directives if d.imports != {}]
+    meta_directives           = [d for d in meta_directives if d.imports == {}]
+    implicit_symbols          = dict.fromkeys(symbol for meta_directive in meta_directives for symbol in meta_directive.exports)
+    current_symbols           = dict.fromkeys(implicit_symbols)
 
     while remaining_meta_directives:
 
@@ -980,12 +980,12 @@ def do(*,
         meta_directive_args += [f'[{', '.join(f"'{symbol}'" for symbol in meta_directive.exports)}]']
 
         # The meta-directive explicitly has no imports.
-        if meta_directive.imports == set():
-            actual_imports = set()
+        if meta_directive.imports == {}:
+            actual_imports = {}
 
         # The meta-directive lists its imports or have them be implicit given.
         else:
-            actual_imports = (meta_directive.imports or set()) | implicit_symbols
+            actual_imports = (meta_directive.imports or {}) | implicit_symbols
 
         # Provide the name of the symbols that the Python snippet will be able to use.
         meta_directive_args += [f'[{', '.join(f"'{symbol}'" for symbol in actual_imports)}]']

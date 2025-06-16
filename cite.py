@@ -283,7 +283,7 @@ def get_ledger():
             ledger.issues += [types.SimpleNamespace(
                 file_path = citation.file_path,
                 line_num  = citation.line_num,
-                reason    = f'Citation uses undeclared source "{citation.source_name}".',
+                reason    = f'Citation uses undeclared source "{citation.source_name}".', # TODO difflib.
             )]
 
     return ledger

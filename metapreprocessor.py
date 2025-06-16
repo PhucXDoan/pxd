@@ -659,7 +659,7 @@ def MetaDirective(
             stopped = False
 
             try:
-                next(callback_iterator)
+                callback_iterator.send(function_globals['Meta'].output)
             except StopIteration:
                 stopped = True
 

@@ -1,5 +1,7 @@
 import pathlib, collections, __main__
 
+# TODO OrdSet
+
 def round_up(x, n = 1):
     return x + (n - x % n) % n
 
@@ -27,6 +29,9 @@ def inversing(f, xs):
         inverse[f(x)] += [x]
 
     return dict(inverse)
+
+def uniques_from(xs):
+    return tuple(dict.fromkeys(xs).keys())
 
 def nonuniques(xs):
     history = set()

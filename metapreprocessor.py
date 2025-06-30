@@ -58,6 +58,8 @@ class Obj:
             case None     : key_values = fields.items()
             case dict()   : key_values = __value.items()
             case Record() : key_values = __value.__dict__.items()
+            case tuple()  : key_values = dict.fromkeys(__value).items()
+            case list()   : key_values = dict.fromkeys(__value).items()
             case _        : raise TypeError(f"Can't make an Obj from a {type(__value)}: {__value}.")
 
         for key, value in key_values:
@@ -111,10 +113,12 @@ class Record:
             raise ValueError('Record should either initialized from a value or by keyword arguments.')
 
         match __value:
-            case None   : key_values = fields.items()
-            case dict() : key_values = __value.items()
-            case Obj()  : key_values = __value.__dict__.items()
-            case _      : raise TypeError(f"Can't make a Record from a {type(__value)}: {__value}.")
+            case None    : key_values = fields.items()
+            case dict()  : key_values = __value.items()
+            case Obj()   : key_values = __value.__dict__.items()
+            case tuple() : key_values = dict.fromkeys(__value).items()
+            case list()  : key_values = dict.fromkeys(__value).items()
+            case _       : raise TypeError(f"Can't make a Record from a {type(__value)}: {__value}.")
 
         for key, value in key_values:
             self.__dict__[key] = value

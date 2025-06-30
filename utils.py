@@ -8,18 +8,21 @@ def round_up(x, n = 1):
 def lines_of(string):
     return [line.strip() for line in string.strip().splitlines()]
 
-def root(*subpaths):
+def root(*subpaths): # TODO Clean up.
+
+    if len(subpaths) == 1 and isinstance(subpaths[0], pathlib.Path):
+        return subpaths[0].absolute().relative_to(pathlib.Path.cwd(), walk_up = True)
 
     # Easy way to make multiple paths relative to project root.
-    if len(subpaths) == 1 and '\n' in subpaths[0]:
+    elif len(subpaths) == 1 and '\n' in subpaths[0]:
         return [root(path) for path in lines_of(subpaths[0])]
 
     # Easy way to concatenate paths together to make a path relative to project root.
     else:
         return pathlib.Path(
-            pathlib.Path(__main__.__file__).absolute().relative_to(pathlib.Path.cwd(), walk_up=True).parent,
-            *subpaths
-        )
+            pathlib.Path(__main__.__file__).absolute().parent,
+            *subpaths,
+        ).relative_to(pathlib.Path.cwd(), walk_up = True)
 
 def inversing(f, xs):
 

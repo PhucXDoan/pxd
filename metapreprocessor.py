@@ -1,6 +1,6 @@
 import pathlib, types, contextlib, re, traceback, builtins, sys, copy
 from ..pxd.log   import log
-from ..pxd.utils import ljusts, root, deindent, repr_in_c
+from ..pxd.utils import ljusts, root, deindent, repr_in_c, Record
 
 # TODO Warn on unused symbols.
 
@@ -15,6 +15,7 @@ class MetaError(Exception):
     def __str__(self):
         return self.diagnostic
 
+################################################################ Meta ################################################################
 
 class Meta:
 
@@ -385,40 +386,21 @@ class Meta:
 
         return decorator
 
+################################################################ Meta-Directive ################################################################
 
-def MetaDirective(
-    index,
-    source_file_path,
-    header_line_number,
-    include_file_path,
-    include_directive_line_number,
-    exports,
-    imports,
-    meta_globals,
-    *,
-    callback=None,
-    meta_directives,
-):
+def MetaDirective(**info):
     def decorator(function):
-        nonlocal meta_globals
+        nonlocal info
+        info = Record(info)
 
         #
         # Start of callback.
         #
 
-        if callback is None:
+        if info.callback is None:
             callback_iterator = None
         else:
-            callback_iterator = callback(
-                index,
-                source_file_path,
-                header_line_number,
-                include_file_path,
-                include_directive_line_number,
-                exports,
-                imports,
-                meta_directives,
-            )
+            callback_iterator = info.callback(info)
             next(callback_iterator)
 
         #
@@ -427,31 +409,31 @@ def MetaDirective(
 
         function_globals = {}
 
-        for symbol in imports:
+        for symbol in info.imports:
 
             # We have to skip modules since they're not deepcopy-able.
-            if isinstance(meta_globals[symbol], types.ModuleType):
-                function_globals[symbol] = meta_globals[symbol]
+            if isinstance(info.meta_globals[symbol], types.ModuleType):
+                function_globals[symbol] = info.meta_globals[symbol]
 
             # We deepcopy exported values so that if a meta-directive mutates it for some reason,
             # it'll only be contained within that meta-directive; this isn't really necessary,
             # but since meta-directives are evaluated mostly out-of-order, it helps keep the
             # uncertainty factor lower.
             else:
-                function_globals[symbol] = copy.deepcopy(meta_globals[symbol])
+                function_globals[symbol] = copy.deepcopy(info.meta_globals[symbol])
 
         # Meta is special in that it is the only global singleton. This is for meta-directives that
         # define functions that use Meta itself to generate code, and that function might be called
         # in a different meta-directive. They all need to refer to the same object, so one singleton
         # must be made for everyone to refer to. Still, checks are put in place to make Meta illegal
         # to use in meta-directives that do not have an associated #include.
-        function_globals['Meta'] = meta_globals['Meta']
+        function_globals['Meta'] = info.meta_globals['Meta']
 
         #
         # Execute the meta-directive.
         #
 
-        function_globals['Meta']._start(include_file_path, source_file_path, include_directive_line_number)
+        function_globals['Meta']._start(info.include_file_path, info.source_file_path, info.include_directive_line_number)
         types.FunctionType(function.__code__, function_globals)()
         function_globals['Meta']._end()
 
@@ -459,22 +441,22 @@ def MetaDirective(
         # Copy the exported symbols into the collective namespace.
         #
 
-        for symbol in exports:
+        for symbol in info.exports:
 
             if symbol not in function_globals:
                 raise MetaError(
                     undefined_exported_symbol = symbol,
-                    source_file_path          = source_file_path,
-                    header_line_number        = header_line_number,
+                    source_file_path   = info.source_file_path,
+                    header_line_number = info.header_line_number,
                 )
 
-            meta_globals[symbol] = function_globals[symbol]
+            info.meta_globals[symbol] = function_globals[symbol]
 
         #
         # End of callback.
         #
 
-        if callback is not None:
+        if info.callback is not None:
 
             stopped = False
 
@@ -488,7 +470,7 @@ def MetaDirective(
 
     return decorator
 
-################################################################ Meta-Preprocessor. ################################################################
+################################################################ Meta-Preprocessor ################################################################
 
 def do(*,
     output_dir_path,
@@ -501,11 +483,12 @@ def do(*,
     # Convert to pathlib.Path.
     #
 
-    output_dir_path   =  pathlib.Path(output_dir_path )
-    source_file_paths = [pathlib.Path(source_file_path) for source_file_path in source_file_paths]
+    output_dir_path = pathlib.Path(output_dir_path)
 
     if meta_py_file_path is None:
-        meta_py_file_path = pathlib.Path(output_dir_path, '__meta__.py')
+        meta_py_file_path = output_dir_path.joinpath('__meta__.py')
+
+    source_file_paths = tuple(map(pathlib.Path, source_file_paths))
 
     #
     # Get all of the #meta directives.
@@ -783,45 +766,37 @@ def do(*,
     meta_py = []
 
     # Additional context.
-    for meta_directivei, meta_directive in enumerate(meta_directives):
+    for meta_directive_i, meta_directive in enumerate(meta_directives):
 
-        meta_directive_args  = []
-
-        # Indicate where the nth #meta directive came from.
-        meta_directive_args += [     meta_directivei                   ]
-        meta_directive_args += [f"r'{meta_directive.source_file_path}'"]
-        meta_directive_args += [     meta_directive.header_line_number ]
-
-        # If the #meta directive has a #include directive associated with it, provide the include file path and line number.
-        meta_directive_args += [f"r'{meta_directive.include_file_path}'"   if meta_directive.include_file_path is not None else None]
-        meta_directive_args += [     meta_directive.header_line_number - 1 if meta_directive.include_file_path is not None else None]
-
-        # Provide the name of the symbols that the Python snippet will define.
-        meta_directive_args += [f'[{', '.join(f"'{symbol}'" for symbol in meta_directive.exports)}]']
-
-        # The meta-directive explicitly has no imports.
-        if meta_directive.imports == {}:
-            actual_imports = {}
-
-        # The meta-directive lists its imports or have them be implicit given.
+        if meta_directive.include_file_path is None:
+            include_file_path             = None
+            include_directive_line_number = None
         else:
-            actual_imports = (meta_directive.imports or {}) | implicit_symbols
+            include_file_path             = f"r'{meta_directive.include_file_path}'"
+            include_directive_line_number =      meta_directive.header_line_number - 1
 
-        # Provide the name of the symbols that the Python snippet will be able to use.
-        meta_directive_args += [f'[{', '.join(f"'{symbol}'" for symbol in actual_imports)}]']
+        if meta_directive.imports == {}: # TODO Ordset.
+            imports = {} # The meta-directive explicitly has no imports.
+        else:
+            imports = (meta_directive.imports or {}) | implicit_symbols # The meta-directive lists its imports or have them be implicit given.
 
-        # Pass the dictionary containing all of the currently exported symbols so far.
-        meta_directive_args += ['__META_GLOBALS__']
+        exports = ', '.join(map(repr, meta_directive.exports))
+        imports = ', '.join(map(repr, imports        ))
 
-        # Provide other data common to all meta-directive handling.
-        if callback:
-            meta_directive_args += ['**__META_SHARED__']
-
-        # All Python snippets are in the context of a function for scoping reasons.
-        # The @MetaDirective will also automatically set up the necesary things to
-        # execute the Python snippet and output the generated code.
-        meta_py += [f"@MetaDirective({', '.join(map(str, meta_directive_args))})"]
-        meta_py += [f'def __META__():']
+        meta_py += [deindent(f'''
+            @MetaDirective(
+                index                         = {meta_directive_i},
+                source_file_path              = r'{meta_directive.source_file_path}',
+                header_line_number            = {meta_directive.header_line_number},
+                include_file_path             = {include_file_path            },
+                include_directive_line_number = {include_directive_line_number},
+                exports                       = [{exports}],
+                imports                       = [{imports}],
+                meta_globals                  = __META_GLOBALS__,
+                **__META_SHARED__
+            )
+            def __META__():
+        ''')]
 
         # List the things that the function is expected to define in the global namespace.
         if meta_directive.exports:
@@ -897,6 +872,9 @@ def do(*,
 
                 while tbs and tbs[0].name != '__META__':
                     del tbs[0] # We only care what happens after we begin executing the meta-directive's Python snippet.
+
+                if not tbs:
+                    raise err from err
 
                 for tb in tbs:
 
@@ -1001,4 +979,4 @@ def do(*,
                     case _:
                         log(f'[ERROR] ({type(err)}) {str(err).removesuffix('.')}.')
 
-        raise MetaError('') from err
+        raise MetaError('TODO') from err

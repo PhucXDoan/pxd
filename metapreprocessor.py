@@ -4,7 +4,7 @@ from ..pxd.utils import ljusts, root, deindent, repr_in_c, Record, OrdSet
 
 # TODO Warn on unused symbols.
 
-class MetaErrorLift(str):
+class MetaLiftedError(str):
     pass
 
 class MetaError(Exception):
@@ -911,7 +911,7 @@ def do(*,
                 if abs(line_i + 1 - stack.line_number) <= 4
             ]
 
-        if isinstance(err.args[0], MetaErrorLift):
+        if isinstance(err.args[0], MetaLiftedError):
             stacks = stacks[:-1]
 
         #

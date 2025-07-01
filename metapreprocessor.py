@@ -4,6 +4,9 @@ from ..pxd.utils import ljusts, root, deindent, repr_in_c, Record, OrdSet
 
 # TODO Warn on unused symbols.
 
+class MetaErrorLift(str):
+    pass
+
 class MetaError(Exception):
 
     def __init__(self, diagnostic = None, *, undefined_exported_symbol = None, source_file_path = None, header_line_number = None):
@@ -907,6 +910,9 @@ def do(*,
                 for line_i, line in enumerate(open(stack.file_path).read().splitlines())
                 if abs(line_i + 1 - stack.line_number) <= 4
             ]
+
+        if isinstance(err.args[0], MetaErrorLift):
+            stacks = stacks[:-1]
 
         #
         # Log the diagnostics.

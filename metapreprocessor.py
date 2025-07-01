@@ -911,7 +911,7 @@ def do(*,
                 if abs(line_i + 1 - stack.line_number) <= 4
             ]
 
-        if isinstance(err.args[0], MetaLiftedError):
+        if err.args and isinstance(err.args[0], MetaLiftedError):
             stacks = stacks[:-1]
 
         #

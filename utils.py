@@ -101,7 +101,7 @@ def deindent(lines_or_a_string, remove_leading_newline = True):
 
     match lines_or_a_string:
         case str() : lines = lines_or_a_string.splitlines()
-        case _     : lines = lines_or_a_string
+        case _     : lines = list(lines_or_a_string)
 
     if remove_leading_newline and lines and lines[0].strip() == '':
         del lines[0]

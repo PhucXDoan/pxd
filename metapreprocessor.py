@@ -860,9 +860,9 @@ def do(*,
             # Errors that happen outside of the execution of the meta-directive.
             case MetaError():
                 stacks += [types.SimpleNamespace(
-                    file_path     = root(err.source_file_path),
-                    line_number   = err.header_line_number,
-                    function_name = '<meta-directive>',
+                    file_path   = root(err.source_file_path),
+                    line_number = err.header_line_number,
+                    func_name   = '<meta-directive>',
                 )]
 
             # Errors that happen during the execution of the meta-directive.
@@ -896,9 +896,9 @@ def do(*,
                         line_number = err_dir.header_line_number + (line_number - err_dir.meta_py_line_number) + 1
 
                     stacks += [types.SimpleNamespace(
-                        file_path     = root(file_path),
-                        line_number   = line_number,
-                        function_name = '<meta-directive>' if tb.name == '__META__' else tb.name,
+                        file_path   = root(file_path),
+                        line_number = line_number,
+                        func_name   = '<meta-directive>' if tb.name == '__META__' else tb.name,
                     )]
 
         for stack in stacks:
@@ -912,73 +912,78 @@ def do(*,
         # Log the diagnostics.
         #
 
-        @ljusts(stacks)
-        def table(stack):
-            return {
-                'file_path'     : stack.file_path,
-                'line_number'   : stack.line_number,
-                'function_name' : stack.function_name,
-            }
-
         log()
 
         line_number_just = max(0, *(len(str(stack.line_number + stack.lines[-1][0])) for stack in stacks))
 
         for stack_i, stack in enumerate(stacks):
 
-            log(' ' * line_number_just, end = '')
-            log(' | {file_path} : {line_number} : {function_name} | '.format(**table(stack)), end = '')
-            log(next(line.strip() for line_delta, line in stack.lines if line_delta == 0), ansi = 'bg_red')
-
-            if stack_i < len(stacks) - 1:
-                continue
-
+            log(' ' * line_number_just + ' .')
+            log(' ' * line_number_just + ' . ', end = '')
+            log('.' * 150, ansi = 'fg_bright_black')
+            log(' ' * line_number_just + ' .')
             log(' ' * line_number_just + ' |')
+
             for line_delta, line in stack.lines:
+
                 line_number = stack.line_number + line_delta
-                log(
-                    f'{str(line_number).rjust(line_number_just)} | {line}',
-                    ansi = 'bg_red' if line_delta == 0 else None,
-                    end  = '',
-                )
-                if line_delta == 0:
-                    log(f' <- {stack.file_path.name} : {line_number}', ansi = 'fg_yellow', end = '')
-                log()
+
+                with log(ansi = 'bold' if line_delta == 0 else None):
+
+                    log(
+                        f'{str(line_number).rjust(line_number_just)} |',
+                        end  = '',
+                    )
+                    log(
+                        f' {line}',
+                        ansi = 'bg_red' if line_delta == 0 else None,
+                        end  = '',
+                    )
+
+                    if line_delta == 0:
+                        log(f' <- {stack.file_path} : {line_number} : {stack.func_name}', ansi = 'fg_yellow', end = '')
+
+                    log()
+
             log(' ' * line_number_just + ' |')
 
-            log()
+        log()
 
-            with log(ansi = 'fg_red'):
+        with log(ansi = 'fg_red'):
 
-                match err:
+            match err:
 
-                    case builtins.NameError():
-                        log(f'[ERROR] Name exception.')
-                        log(f'        > {str(err).removesuffix('.')}.') # TODO Better error message when NameError refers to an export.
+                case builtins.NameError():
+                    log(f'[ERROR] Name exception.')
+                    log(f'        > {str(err).removesuffix('.')}.') # TODO Better error message when NameError refers to an export.
 
-                    case builtins.AttributeError():
-                        log(f'[ERROR] Attribute exception.')
-                        log(f'        > {str(err).removesuffix('.')}.')
+                case builtins.AttributeError():
+                    log(f'[ERROR] Attribute exception.')
+                    log(f'        > {str(err).removesuffix('.')}.')
 
-                    case builtins.KeyError():
-                        log(f'[ERROR] Key Error: {str(err)}.')
+                case builtins.KeyError():
+                    log(f'[ERROR] Key Error: {str(err)}.')
 
-                    case builtins.ValueError():
-                        log(f'[ERROR] Value exception.')
-                        log(f'        > {str(err).removesuffix('.')}.')
+                case builtins.ValueError():
+                    log(f'[ERROR] Value exception.')
+                    log(f'        > {str(err).removesuffix('.')}.')
 
-                    case builtins.AssertionError():
-                        log(f'[ERROR] Assert exception.')
-                        if err.args:
-                            log(f'        > {err.args[0]}')
+                case builtins.RuntimeError():
+                    log(f'[ERROR] Runtime exception.')
+                    log(f'        > {str(err).removesuffix('.')}.')
 
-                    case MetaError():
-                        if err.undefined_exported_symbol is not None:
-                            log(f'[ERROR] Meta-directive did not define "{err.undefined_exported_symbol}".')
-                        else:
-                            log(f'[ERROR] {str(err).removesuffix('.')}.')
+                case builtins.AssertionError():
+                    log(f'[ERROR] Assert exception.')
+                    if err.args:
+                        log(f'        > {err.args[0]}')
 
-                    case _:
-                        log(f'[ERROR] ({type(err)}) {str(err).removesuffix('.')}.')
+                case MetaError():
+                    if err.undefined_exported_symbol is not None:
+                        log(f'[ERROR] Meta-directive did not define "{err.undefined_exported_symbol}".')
+                    else:
+                        log(f'[ERROR] {str(err).removesuffix('.')}.')
+
+                case _:
+                    log(f'[ERROR] ({type(err)}) {str(err).removesuffix('.')}.')
 
         raise MetaError() from err

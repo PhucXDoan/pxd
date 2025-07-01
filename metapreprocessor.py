@@ -968,10 +968,15 @@ def do(*,
                     log(f'        > {str(err).removesuffix('.')}.')
 
                 case builtins.KeyError():
-                    log(f'[ERROR] Key Error: {str(err)}.')
+                    log(f'[ERROR] Key exception.')
+                    log(f'        > {str(err)}.')
 
                 case builtins.ValueError():
                     log(f'[ERROR] Value exception.')
+                    log(f'        > {str(err).removesuffix('.')}.')
+
+                case builtins.NotImplementedError():
+                    log(f'[ERROR] Unimplemented codepath exception.')
                     log(f'        > {str(err).removesuffix('.')}.')
 
                 case builtins.RuntimeError():
@@ -987,9 +992,11 @@ def do(*,
                     if err.undefined_exported_symbol is not None:
                         log(f'[ERROR] Meta-directive did not define "{err.undefined_exported_symbol}".')
                     else:
-                        log(f'[ERROR] {str(err).removesuffix('.')}.')
+                        log(f'[ERROR] Meta-preprocessor exception.')
+                        log(f'        > {str(err).removesuffix('.')}.')
 
                 case _:
-                    log(f'[ERROR] ({type(err)}) {str(err).removesuffix('.')}.')
+                    log(f'[ERROR] {type(err)}')
+                    log(f'        > {err}')
 
         raise MetaError() from err

@@ -330,10 +330,7 @@ def find(
         # Find all the citations and group them based on the source.
         #
 
-        sources_named = inversing(
-            lambda citation: (citation.source_type, citation.source_name),
-            ledger.citations
-        )
+        sources_named = inverse_of(ledger.citations, lambda x: (x.source_type, x.source_name))
 
         def source_sorting(item):
 

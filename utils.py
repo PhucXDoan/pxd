@@ -7,8 +7,14 @@ def round_up(x, n = 1):
 
 ################################################################################################################################
 
-def uniques_only(xs):
-    return tuple(dict.fromkeys(xs).keys()) # Order is preserved.
+def inverse_of(xs, func):
+
+    inverse = collections.defaultdict(lambda: [])
+
+    for x in xs:
+        inverse[func(x)] += [x]
+
+    return { key : tuple(values) for key, values in inverse.items() }
 
 ################################################################################################################################
 
@@ -144,7 +150,7 @@ def Table(header, *entries):
 class OrdSet:
 
     def __init__(self, given = ()):
-        self.elems = uniques_only(given)
+        self.elems = tuple(dict.fromkeys(given).keys())
 
     def __str__(self):
         if self.elems:
@@ -158,6 +164,18 @@ class OrdSet:
 
     def __or__(self, others):
         return OrdSet((*self.elems, *others))
+
+    def __rsub__(self, others):
+        return OrdSet(other for other in others if other not in self.elems)
+
+    def __sub__(self, others):
+        return OrdSet(elem for elem in self.elems if elem not in others)
+
+    def __getitem__(self, key):
+        return self.elems[key]
+
+    def __len__(self):
+        return len(self.elems)
 
     def __bool__(self):
         return bool(self.elems)

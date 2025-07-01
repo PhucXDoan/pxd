@@ -922,27 +922,29 @@ def do(*,
 
         log()
 
+        line_number_just = max(0, *(len(str(stack.line_number + stack.lines[-1][0])) for stack in stacks))
+
         for stack_i, stack in enumerate(stacks):
 
-            log('[{file_path} : {line_number} : {function_name}] '.format(**table(stack)), end = '')
+            log(' ' * line_number_just, end = '')
+            log(' | {file_path} : {line_number} : {function_name} | '.format(**table(stack)), end = '')
             log(next(line.strip() for line_delta, line in stack.lines if line_delta == 0), ansi = 'bg_red')
 
             if stack_i < len(stacks) - 1:
                 continue
 
-            line_number_ljust = len(str(stack.line_number + stack.lines[-1][0]))
-            log(f'{''.ljust(line_number_ljust)} |')
+            log(' ' * line_number_just + ' |')
             for line_delta, line in stack.lines:
                 line_number = stack.line_number + line_delta
                 log(
-                    f'{str(line_number).ljust(line_number_ljust)} | {line}',
+                    f'{str(line_number).rjust(line_number_just)} | {line}',
                     ansi = 'bg_red' if line_delta == 0 else None,
                     end  = '',
                 )
                 if line_delta == 0:
                     log(f' <- {stack.file_path.name} : {line_number}', ansi = 'fg_yellow', end = '')
                 log()
-            log(f'{''.ljust(line_number_ljust)} |')
+            log(' ' * line_number_just + ' |')
 
             log()
 
@@ -979,4 +981,4 @@ def do(*,
                     case _:
                         log(f'[ERROR] ({type(err)}) {str(err).removesuffix('.')}.')
 
-        raise MetaError('TODO') from err
+        raise MetaError() from err

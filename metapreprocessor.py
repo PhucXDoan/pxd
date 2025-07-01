@@ -1,7 +1,8 @@
 import pathlib, types, contextlib, re, traceback, builtins, sys, copy
 from ..pxd.log   import log
-from ..pxd.utils import ljusts, root, deindent, cstr
+from ..pxd.utils import ljusts, root, deindent, repr_in_c
 
+# TODO Warn on unused symbols.
 
 class MetaError(Exception):
 
@@ -299,7 +300,7 @@ class Meta:
             elif params is not None:
                 params = list(params)
 
-            expansion = deindent(cstr(expansion))
+            expansion = deindent(repr_in_c(expansion))
 
             if params is None:
                 macro = f'{name}'
@@ -692,7 +693,7 @@ def do(*,
                             line   = line.rstrip()
                             lines += [line]
 
-                        lines = deindent(lines, newline_strip=False)
+                        lines = deindent(lines)
 
                         meta_directives += [types.SimpleNamespace(
                             source_file_path   = source_file_path,

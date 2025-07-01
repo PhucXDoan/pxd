@@ -141,6 +141,34 @@ def Table(header, *entries):
 
 ################################################################################################################################
 
+class OrdSet:
+
+    def __init__(self, given = ()):
+        self.elems = uniques_only(given)
+
+    def __str__(self):
+        if self.elems:
+            return f'{{ {', '.join(map(repr, self.elems))} }}'
+        else:
+            return '{}'
+
+    def __iter__(self):
+        for elem in self.elems:
+            yield elem
+
+    def __or__(self, others):
+        return OrdSet((*self.elems, *others))
+
+    def __bool__(self):
+        return bool(self.elems)
+
+    def __eq__(self, other):
+        match other:
+            case None : return False
+            case _    : return set(self) == set(other)
+
+################################################################################################################################
+
 class Obj:
 
     def __init__(self, given = None, **fields):
@@ -185,7 +213,7 @@ class Obj:
         for name, value in self.__dict__.items():
             yield (name, value)
 
-    def __repr__(self):
+    def __str__(self):
         return f'Obj({ ', '.join(f'{repr(key)}={repr(value)}' for key, value in self) })'
 
     def __contains__(self, key):
@@ -237,7 +265,7 @@ class Record:
         for name, value in self.__dict__.items():
             yield (name, value)
 
-    def __repr__(self):
+    def __str__(self):
         return f'Record({ ', '.join(f'{repr(key)}={repr(value)}' for key, value in self) })'
 
     def __contains__(self, key):
@@ -246,12 +274,9 @@ class Record:
     def __or__(self, other):
 
         match other:
-            case dict() : items = other.items()
-            case Obj()  : items = other
+            case dict() : items = other
+            case Obj()  : items = other.__dict__
             case _:
                 raise TypeError(f'Record cannot be combined with a {type(other)}: {other}.')
 
-        for key, value in items:
-            self.__setitem__(key, value)
-
-        return self
+        return Record(**self.__dict__, **items)

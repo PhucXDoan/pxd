@@ -1,6 +1,6 @@
 import pathlib, types, contextlib, re, traceback, builtins, sys, copy
 from ..pxd.log   import log
-from ..pxd.utils import ljusts, root, deindent, repr_in_c, Record
+from ..pxd.utils import ljusts, root, deindent, repr_in_c, Record, OrdSet
 
 # TODO Warn on unused symbols.
 
@@ -504,7 +504,7 @@ def do(*,
             case _                  : raise MetaError(f'{diagnostic_header} Too many colons for meta-directive!')
 
         return [
-            dict.fromkeys(
+            OrdSet(
                 symbol.strip()
                 for symbol in port.split(',')
                 if symbol.strip() # We'll be fine if there's extra commas; just remove the empty strings.
@@ -676,7 +676,7 @@ def do(*,
                             line   = line.rstrip()
                             lines += [line]
 
-                        lines = deindent(lines)
+                        lines = deindent(lines, remove_leading_newline = False)
 
                         meta_directives += [types.SimpleNamespace(
                             source_file_path   = source_file_path,
@@ -728,7 +728,7 @@ def do(*,
         # If no exports/imports are explicitly given,
         # then the meta-directive implicitly imports everything.
         if not meta_directive.exports and not meta_directive.imports:
-            meta_directive.imports = dict.fromkeys(all_exports.keys())
+            meta_directive.imports = OrdSet(all_exports.keys())
 
     #
     # Sort the #meta directives.
@@ -738,8 +738,8 @@ def do(*,
     # because their exports will be implicitly imported to all the other meta-directives.
     remaining_meta_directives = [d for d in meta_directives if d.imports != {}]
     meta_directives           = [d for d in meta_directives if d.imports == {}]
-    implicit_symbols          = dict.fromkeys(symbol for meta_directive in meta_directives for symbol in meta_directive.exports)
-    current_symbols           = dict.fromkeys(implicit_symbols)
+    implicit_symbols          = OrdSet(symbol for meta_directive in meta_directives for symbol in meta_directive.exports)
+    current_symbols           = OrdSet(implicit_symbols)
 
     while remaining_meta_directives:
 
@@ -775,15 +775,15 @@ def do(*,
             include_file_path             = f"r'{meta_directive.include_file_path}'"
             include_directive_line_number =      meta_directive.header_line_number - 1
 
-        if meta_directive.imports == {}: # TODO Ordset.
+        if meta_directive.imports == OrdSet():
             imports = {} # The meta-directive explicitly has no imports.
         else:
-            imports = (meta_directive.imports or {}) | implicit_symbols # The meta-directive lists its imports or have them be implicit given.
+            imports = (meta_directive.imports or OrdSet()) | implicit_symbols # The meta-directive lists its imports or have them be implicit given.
 
         exports = ', '.join(map(repr, meta_directive.exports))
         imports = ', '.join(map(repr, imports        ))
 
-        meta_py += [deindent(f'''
+        meta_py += deindent(f'''
             @MetaDirective(
                 index                         = {meta_directive_i},
                 source_file_path              = r'{meta_directive.source_file_path}',
@@ -796,7 +796,7 @@ def do(*,
                 **__META_SHARED__
             )
             def __META__():
-        ''')]
+        ''').splitlines()
 
         # List the things that the function is expected to define in the global namespace.
         if meta_directive.exports:
@@ -892,8 +892,8 @@ def do(*,
                             if 0 <= (line_number - dir.meta_py_line_number) <= len(dir.lines)
                         )
 
-                        file_path    = err_dir.source_file_path
-                        line_number += 1 - err_dir.meta_py_line_number + err_dir.header_line_number
+                        file_path   = err_dir.source_file_path
+                        line_number = err_dir.header_line_number + (line_number - err_dir.meta_py_line_number) + 1
 
                     stacks += [types.SimpleNamespace(
                         file_path     = root(file_path),

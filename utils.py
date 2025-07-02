@@ -7,12 +7,18 @@ def round_up(x, n = 1):
 
 ################################################################################################################################
 
-def inverse_of(xs, func):
+def inverse_of(xs, func = None):
 
     inverse = collections.defaultdict(lambda: [])
 
     for x in xs:
-        inverse[func(x)] += [x]
+
+        if func is None:
+            key, value = x
+        else:
+            key, value = func(x), x
+
+        inverse[key] += [value]
 
     return { key : tuple(values) for key, values in inverse.items() }
 
@@ -68,14 +74,29 @@ def root(*paths_or_parts):
 
 def ljusts(elems, include_keys = False):
 
-    def decorator(func):
+    def decorator(func = lambda x: x):
 
         justs = collections.defaultdict(lambda: 0)
         keys  = []
+        rows  = []
 
         for elem in elems:
 
-            for key, value in func(elem).items():
+            row   = func(elem)
+            rows += [row]
+
+            match row:
+
+                case dict():
+                    func_dict = row
+
+                case _:
+                    func_dict = {
+                        i : value
+                        for i, value in enumerate(row)
+                    }
+
+            for key, value in func_dict.items():
 
                 justs[key] = max(
                     justs[key],
@@ -88,14 +109,25 @@ def ljusts(elems, include_keys = False):
 
         def func_ljusted(elem):
 
-            func_dict = func(elem)
+            match row := func(elem):
 
-            return {
-                key : str(func_dict.get(key, '')).ljust(justs[key])
-                for key in keys
-            }
+                case dict():
+                    return {
+                        key : str(row.get(key, '')).ljust(justs[key])
+                        for key in keys
+                    }
 
-        func_ljusted.keys = tuple(key.ljust(justs[key]) for key in keys)
+                case _:
+                    return tuple(
+                        str(value).ljust(justs[value_i])
+                        for value_i, value in enumerate(row)
+                    )
+
+        func_ljusted.rows = rows
+        func_ljusted.keys = tuple(
+            str(key).ljust(justs[key])
+            for key in keys
+        )
 
         return func_ljusted
 

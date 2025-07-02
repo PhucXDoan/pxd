@@ -43,7 +43,7 @@ def mk_dict(items):
     items = tuple(items)
 
     if dupe_key := find_dupe(key for key, value in items):
-        raise ValueError(f'Making dict with duplicate key: {repr(dupe_key)}.')
+        raise ValueError(ErrorLift(f'Making dict with duplicate key: {repr(dupe_key)}.'))
 
     return dict(items)
 
@@ -171,7 +171,7 @@ def Table(header, *entries):
             continue # Allows for an entry to be easily omitted.
 
         if len(entry) != len(header):
-            raise ValueError(f'Row {entry_i + 1} has {len(entry)} entries but the header defines {len(header)} columns.')
+            raise ValueError(ErrorLift(f'Row {entry_i + 1} has {len(entry)} entries but the header defines {len(header)} columns.'))
 
         table += [Obj(dict(zip(header, entry)))]
 
@@ -224,7 +224,7 @@ class Obj:
     def __init__(self, given = None, **fields):
 
         if given is not None and fields:
-            raise ValueError('Obj cannot be initialized using an argument and keyword-arguments at the same time.')
+            raise ValueError(ErrorLift('Obj cannot be initialized using an argument and keyword-arguments at the same time.'))
 
         match given:
             case None     : items = fields.items()
@@ -232,32 +232,35 @@ class Obj:
             case Record() : items = given.__dict__.items()
             case tuple()  : items = dict.fromkeys(given).items()
             case list()   : items = dict.fromkeys(given).items()
-            case _        : raise TypeError(f'Obj can\'t be made with {type(given)}: {repr(given)}.')
+            case _        : raise TypeError(ErrorLift(f'Obj can\'t be made with {type(given)}: {repr(given)}.'))
 
         for key, value in items:
             self.__dict__[key] = value
 
+    def __len__(self):
+        return len(self.__dict__)
+
     def __getattr__(self, key):
-        raise AttributeError(f'No field (.{key}) to read.')
+        raise AttributeError(ErrorLift(f'No field (.{key}) to read.'))
 
     def __setattr__(self, key, value):
         if key in self.__dict__:
             self.__dict__[key] = value
         else:
-            raise AttributeError(f'No field (.{key}) to write.')
+            raise AttributeError(ErrorLift(f'No field (.{key}) to write.'))
 
     def __getitem__(self, key):
         if key in self.__dict__:
             return self.__dict__[key]
         else:
-            raise AttributeError(f'No field ["{key}"] to read.')
+            raise AttributeError(ErrorLift(f'No field ["{key}"] to read.'))
 
     def __setitem__(self, key, value):
         if key in self.__dict__:
             self.__dict__[key] = value
             return value
         else:
-            raise AttributeError(f'No field ["{key}"] to write.')
+            raise AttributeError(ErrorLift(f'No field ["{key}"] to write.'))
 
     def __iter__(self):
         for name, value in self.__dict__.items():
@@ -276,7 +279,7 @@ class Record:
     def __init__(self, given = None, **fields):
 
         if given is not None and fields:
-            raise ValueError('Record cannot be initialized using an argument and keyword-arguments at the same time.')
+            raise ValueError(ErrorLift('Record cannot be initialized using an argument and keyword-arguments at the same time.'))
 
         match given:
             case None    : items = fields.items()
@@ -284,17 +287,20 @@ class Record:
             case Obj()   : items = given.__dict__.items()
             case tuple() : items = dict.fromkeys(given).items()
             case list()  : items = dict.fromkeys(given).items()
-            case _       : raise TypeError(f'Record can\'t be made with {type(given)}: {repr(given)}.')
+            case _       : raise TypeError(ErrorLift(f'Record can\'t be made with {type(given)}: {repr(given)}.'))
 
         for key, value in items:
             self.__dict__[key] = value
 
+    def __len__(self):
+        return len(self.__dict__)
+
     def __getattr__(self, key):
-        raise AttributeError(f'No field (.{key}) to read.')
+        raise AttributeError(ErrorLift(f'No field (.{key}) to read.'))
 
     def __setattr__(self, key, value):
         if key in self.__dict__:
-            raise AttributeError(f'Field (.{key}) already exists.')
+            raise AttributeError(ErrorLift(f'Field (.{key}) already exists.'))
         else:
             self.__dict__[key] = value
 
@@ -302,11 +308,11 @@ class Record:
         if key in self.__dict__:
             return self.__dict__[key]
         else:
-            raise AttributeError(f'No field ["{key}"] to read.')
+            raise AttributeError(ErrorLift(f'No field ["{key}"] to read.'))
 
     def __setitem__(self, key, value):
         if key in self.__dict__:
-            raise AttributeError(f'Field ["{key}"] already exists.')
+            raise AttributeError(ErrorLift(f'Field ["{key}"] already exists.'))
         else:
             self.__dict__[key] = value
             return value
@@ -327,6 +333,11 @@ class Record:
             case dict() : items = other
             case Obj()  : items = other.__dict__
             case _:
-                raise TypeError(f'Record cannot be combined with a {type(other)}: {other}.')
+                raise TypeError(ErrorLift(f'Record cannot be combined with a {type(other)}: {other}.'))
 
         return Record(**self.__dict__, **items)
+
+################################################################################################################################
+
+class ErrorLift(str):
+    pass

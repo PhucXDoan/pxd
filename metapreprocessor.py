@@ -1,11 +1,8 @@
 import pathlib, types, contextlib, re, traceback, builtins, sys, copy
 from ..pxd.log   import log
-from ..pxd.utils import ljusts, root, deindent, repr_in_c, Record, OrdSet
+from ..pxd.utils import ljusts, root, deindent, repr_in_c, Record, OrdSet, ErrorLift
 
 # TODO Warn on unused symbols.
-
-class MetaLiftedError(str):
-    pass
 
 class MetaError(Exception):
 
@@ -87,7 +84,7 @@ class Meta:
         open(self.include_file_path, 'w').write(self.output)
 
 
-    def line(self, input): # TODO More consistent trimming of newlines.
+    def line(self, input = '\n\n\n'): # TODO More consistent trimming of newlines.
 
         strings = []
 
@@ -106,7 +103,7 @@ class Meta:
 
 
     @contextlib.contextmanager
-    def enter(self, header=None, opening=None, closing=None, *, indented=None):
+    def enter(self, header = None, opening = None, closing = None, *, indented = None):
 
         #
         # Automatically determine the scope parameters.
@@ -114,7 +111,11 @@ class Meta:
 
         header_is = lambda *keywords: header is not None and re.search(fr'^\s*({'|'.join(keywords)})\b', header)
 
-        if   header_is('#if', '#ifdef', '#elif', '#else') : suggestion = (None, '#endif'  , None)
+        if defining_macro := header_is('#define'):
+            self.within_macro = True
+
+        if   defining_macro                               : suggestion = (None, None      , None)
+        elif header_is('#if', '#ifdef', '#elif', '#else') : suggestion = (None, '#endif'  , None)
         elif header_is('struct', 'union', 'enum')         : suggestion = ('{' , '};'      , None)
         elif header_is('case')                            : suggestion = ('{' , '} break;', None)
         elif header is not None and header.endswith('=')  : suggestion = ('{' , '};'      , True)
@@ -123,13 +124,6 @@ class Meta:
         if opening  is None: opening  = suggestion[0]
         if closing  is None: closing  = suggestion[1]
         if indented is None: indented = suggestion[2]
-
-        #
-        # If we're defining a macro, we have to escape the newlines if it happens to span across multiple lines.
-        #
-
-        if defining_macro := header_is('#define'):
-            self.within_macro = True
 
         #
         # Header and opening lines.
@@ -164,6 +158,7 @@ class Meta:
 
         if defining_macro:
             self.within_macro = False
+            self.line()
 
 
     def enums(self, *args): return self.__enums(self, *args)
@@ -911,7 +906,7 @@ def do(*,
                 if abs(line_i + 1 - stack.line_number) <= 4
             ]
 
-        if err.args and isinstance(err.args[0], MetaLiftedError):
+        if err.args and isinstance(err.args[0], ErrorLift):
             stacks = stacks[:-1]
 
         #

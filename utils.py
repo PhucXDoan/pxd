@@ -190,6 +190,9 @@ class OrdSet:
         else:
             return '{}'
 
+    def __repr__(self):
+        return str(self)
+
     def __iter__(self):
         for elem in self.elems:
             yield elem
@@ -269,6 +272,9 @@ class Obj:
     def __str__(self):
         return f'Obj({ ', '.join(f'{repr(key)}={repr(value)}' for key, value in self) })'
 
+    def __repr__(self):
+        return str(self)
+
     def __contains__(self, key):
         return key in self.__dict__
 
@@ -323,6 +329,9 @@ class Record:
 
     def __str__(self):
         return f'Record({ ', '.join(f'{repr(key)}={repr(value)}' for key, value in self) })'
+
+    def __repr__(self):
+        return str(self)
 
     def __contains__(self, key):
         return key in self.__dict__

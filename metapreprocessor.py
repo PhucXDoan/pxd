@@ -194,7 +194,7 @@ class Meta:
             else:
                 enum_type = f' : {self.underlying_type}'
 
-            with self.meta.enter(f'enum {self.enum_name}{enum_type}'):
+            with self.meta.enter(f'enum {self.enum_name}{enum_type}'): # TODO ljusts.
 
                 #
                 # Determine the longest name.
@@ -205,8 +205,8 @@ class Meta:
                 for member in self.members:
 
                     match member:
-                        case (name, value) : member_len = len(name)
-                        case  name         : member_len = len(name)
+                        case (name, value) : member_len = len(str(name))
+                        case  name         : member_len = len(str(name))
 
                     just = max(just, member_len)
 
@@ -226,7 +226,7 @@ class Meta:
 
                     # Explicit value.
                     else:
-                        self.meta.line(f'{self.enum_name}_{name.ljust(just)} = {value},')
+                        self.meta.line(f'{self.enum_name}_{str(name).ljust(just)} = {value},')
 
             # Provide the amount of members; it's its own enumeration so it won't have
             # to be explicitly handled in switch statements. Using a #define would also

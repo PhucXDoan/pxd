@@ -101,7 +101,10 @@ def ljusts(elems, include_keys = False):
         case builtins.dict : pass
         case None          : elems = tuple(tuple(elem.values()) for elem in elems)
 
-    return elems
+    if include_keys:
+        return tuple(str(key).ljust(value) for key, value in justs.items()), elems
+    else:
+        return elems
 
 ################################################################################################################################
 

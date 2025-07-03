@@ -290,16 +290,8 @@ def get_ledger():
 
 
 def log_issues(issues):
-
-    @ljusts(issues)
-    def columns_of(issue):
-        return {
-            'file_path' : issue.file_path,
-            'line_num'  : issue.line_num,
-        }
-
-    for issue in issues:
-        log('[WARNING] [{file_path}:{line_num}] {reason}'.format(**columns_of(issue), reason = issue.reason), ansi = 'fg_yellow')
+    for issue, columns in zip(issues, ljusts((x.file_path, x.line_num) for x in issues)):
+        log('[WARNING] {0} : {1} : {2}'.format(*columns, issue.reason), ansi = 'fg_yellow')
 
 
 @ui('Find citations and source declarations that refer to a specific source name.')
@@ -376,32 +368,35 @@ def find(
         # Dump the results.
         #
 
-        @ljusts(ledger.citations)
-        def columns_of(citation):
-            return {
-                'file_path' : citation.file_path,
-                'line_num'  : citation.line_num,
-                'pg'        : '' if citation.pg           is None else f'pg {citation.pg}' ,
-                'listing'   : '' if citation.listing_type is None else f'{citation.listing_type} {citation.listing_code}',
-            }
+        rows = [
+            (citation_sub_index, citation)
+            for (source_type, source_name), citations in sorted(sources_named.items(), key = source_sorting)
+            for citation_sub_index, citation in enumerate(sorted(citations, key = citation_sorting))
+        ]
 
-        for (source_type, source_name), citations in sorted(sources_named.items(), key = source_sorting):
-            for citation_i, citation in enumerate(sorted(citations, key = citation_sorting)):
+        rows = zip(rows, ljusts({
+            'file_path' : citation.file_path,
+            'line_num'  : citation.line_num,
+            'pg'        : '' if citation.pg           is None else f'pg {citation.pg}' ,
+            'listing'   : '' if citation.listing_type is None else f'{citation.listing_type} {citation.listing_code}',
+        } for citation_sub_index, citation in rows))
 
-                log('| {file_path} : {line_num} | {pg} | {listing} |'.format(**columns_of(citation)), end = '')
+        for (citation_sub_index, citation), columns in rows:
 
-                if citation_i:
-                    log('')
+            log('| {file_path} : {line_num} | {pg} | {listing} |'.format(**columns), end = '')
 
-                elif citation.source_type:
-                    log(f' {citation.text}')
+            if citation_sub_index:
+                log('')
 
-                elif (source := ledger.sources.get(source_name, None)) is not None and len(source) == 1:
-                    source, = source
-                    log(f' [{source.file_path}:{source.line_num}] {source.text}')
+            elif citation.source_type:
+                log(f' {citation.text}')
 
-                else:
-                    log(f' [???] {CITATION_TAG}`{source_name}`')
+            elif (source := ledger.sources.get(citation.source_name, None)) is not None and len(source) == 1:
+                source, = source
+                log(f' [{source.file_path}:{source.line_num}] {source.text}')
+
+            else:
+                log(f' [???] {CITATION_TAG}`{citation.source_name}`')
 
         if ledger.issues:
             log()
@@ -469,30 +464,20 @@ def find(
         # Show the findings.
         #
 
-        @ljusts([(file_path, instance) for file_path, instances in occurrences.items() for instance in instances])
-        def columns_of(file_path_instance):
-            file_path, instance = file_path_instance
-            return {
-                'file_path' : file_path,
-                'line_num'  : instance.line_num,
-            }
+        rows = [
+            (file_path, instance)
+            for file_path, instances in occurrences.items()
+            for instance in instances
+        ]
 
-        for file_path, instances in occurrences.items():
+        rows = zip(rows, ljusts((file_path, instance.line_num) for file_path, instance in rows))
 
-            for instance in instances:
-
-                log('| {file_path} : {line_num} | '.format(**columns_of((file_path, instance))), end = '')
-
-                chunks = (
-                    instance.line[                     : instance.start_index].lstrip(),
-                    instance.line[instance.start_index : instance.end_index  ],
-                    instance.line[instance.end_index   :                     ].rstrip(),
-                )
-
-                log(chunks[0], end = '')
-                log(chunks[1], end = '', ansi = ('fg_magenta', 'bold', 'underline'))
-                log(chunks[2], end = '')
-                log()
+        for (file_path, instance), columns in rows:
+            log('| {0} : {1} | '.format(*columns), end = '')
+            log(instance.line[                     : instance.start_index].lstrip(), end = '')
+            log(instance.line[instance.start_index : instance.end_index  ]         , end = '', ansi = ('fg_magenta', 'bold', 'underline'))
+            log(instance.line[instance.end_index   :                     ].rstrip(), end = '')
+            log()
 
         #
         # Rename the sources if requested.

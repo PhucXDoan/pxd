@@ -74,64 +74,32 @@ def root(*paths_or_parts):
 
 def ljusts(elems, include_keys = False):
 
-    def decorator(func = lambda x: x):
+    elems = tuple(elems)
 
-        justs = collections.defaultdict(lambda: 0)
-        keys  = []
-        rows  = []
-
-        for elem in elems:
-
-            row   = func(elem)
-            rows += [row]
-
-            match row:
-
-                case dict():
-                    func_dict = row
-
-                case _:
-                    func_dict = {
-                        i : value
-                        for i, value in enumerate(row)
-                    }
-
-            for key, value in func_dict.items():
-
-                justs[key] = max(
-                    justs[key],
-                    len(str(value)),
-                    len(key) if include_keys else 0,
-                )
-
-                if key not in keys:
-                    keys += [key]
-
-        def func_ljusted(elem):
-
-            match row := func(elem):
-
-                case dict():
-                    return {
-                        key : str(row.get(key, '')).ljust(justs[key])
-                        for key in keys
-                    }
-
-                case _:
-                    return tuple(
-                        str(value).ljust(justs[value_i])
-                        for value_i, value in enumerate(row)
-                    )
-
-        func_ljusted.rows = rows
-        func_ljusted.keys = tuple(
-            str(key).ljust(justs[key])
-            for key in keys
+    if all(isinstance(elem, dict) for elem in elems):
+        all_dicts = True
+    else:
+        all_dicts = False
+        elems     = tuple(
+            { subelem_i : subelem for subelem_i, subelem in enumerate(elem) }
+            for elem in elems
         )
 
-        return func_ljusted
+    justs = collections.defaultdict(lambda: 0)
 
-    return decorator
+    for elem in elems:
+        for key, value in elem.items():
+            justs[key] = max(justs[key], len(str(value)), len(str(key)) if include_keys else 0)
+
+    elems = tuple(
+        { key : str(value).ljust(justs[key]) for key, value in elem.items() }
+        for elem in elems
+    )
+
+    if not all_dicts:
+        elems = tuple(tuple(elem.values()) for elem in elems)
+
+    return elems
 
 ################################################################################################################################
 

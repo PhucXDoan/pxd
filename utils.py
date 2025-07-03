@@ -1,4 +1,4 @@
-import math, pathlib, collections, __main__
+import math, pathlib, builtins, collections, __main__
 
 ################################################################################################################################
 
@@ -77,13 +77,13 @@ def ljusts(elems, include_keys = False):
     elems = tuple(elems)
 
     if all(isinstance(elem, dict) for elem in elems):
-        all_dicts = True
+        type = dict
+    elif all(isinstance(elem, str) for elem in elems):
+        type  = str
+        elems = tuple({ 0 : elem } for elem in elems)
     else:
-        all_dicts = False
-        elems     = tuple(
-            { subelem_i : subelem for subelem_i, subelem in enumerate(elem) }
-            for elem in elems
-        )
+        type  = None
+        elems = tuple({ subelem_i : subelem for subelem_i, subelem in enumerate(elem) } for elem in elems)
 
     justs = collections.defaultdict(lambda: 0)
 
@@ -96,8 +96,10 @@ def ljusts(elems, include_keys = False):
         for elem in elems
     )
 
-    if not all_dicts:
-        elems = tuple(tuple(elem.values()) for elem in elems)
+    match type:
+        case builtins.str  : elems = tuple(tuple(elem.values())[0] for elem in elems)
+        case builtins.dict : pass
+        case None          : elems = tuple(tuple(elem.values()) for elem in elems)
 
     return elems
 

@@ -196,8 +196,8 @@ class Meta:
 
             with self.meta.enter(f'enum {self.enum_name}{enum_type}'):
                 for member, ljust_member_name in zip(self.members, ljusts(
-                    f'{self.enum_name}_{member[0]}' if isinstance(member, tuple) else
-                    f'{self.enum_name}_{member},'
+                    f'{self.enum_name}_{member[0] if member[0] is not None else 'none'}' if isinstance(member, tuple) else
+                    f'{self.enum_name}_{member    if member    is not None else 'none'},'
                     for member in self.members
                 )):
                     match member:

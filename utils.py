@@ -53,6 +53,7 @@ def repr_in_c(value):
     match value:
         case bool  () : return str(value).lower()
         case float () : return str(int(value) if value.is_integer() else value)
+        case None     : return 'none'
         case _        : return str(value)
 
 ################################################################################################################################

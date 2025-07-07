@@ -79,9 +79,9 @@ def ljusts(elems, include_keys = False):
 
     if all(isinstance(elem, dict) for elem in elems):
         type = dict
-    elif all(isinstance(elem, str) for elem in elems):
+    elif all(any(isinstance(elem, t) for t in (str, int)) for elem in elems):
         type  = str
-        elems = tuple({ 0 : elem } for elem in elems)
+        elems = tuple({ 0 : str(elem) } for elem in elems)
     else:
         type  = None
         elems = tuple({ subelem_i : subelem for subelem_i, subelem in enumerate(elem) } for elem in elems)

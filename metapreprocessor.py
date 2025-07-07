@@ -1,6 +1,6 @@
 import pathlib, types, contextlib, re, traceback, builtins, sys, copy
 from ..pxd.log   import log
-from ..pxd.utils import ljusts, root, deindent, repr_in_c, Record, OrdSet, ErrorLift
+from ..pxd.utils import ljusts, root, deindent, repr_in_c, mk_dict, Record, OrdSet, ErrorLift
 
 # TODO Warn on unused symbols.
 
@@ -359,6 +359,49 @@ class Meta:
                         raise RuntimeError('Function of Meta.ifs did not return.')
 
         return decorator
+
+    def lut(self, table_name, entries):
+
+        entries = tuple(entries)
+
+        if all(len(entry) == 2 and not isinstance(entry[0], tuple) for entry in entries):
+            entries = tuple((index, entry) for index, entry in mk_dict(entries).items()) # TODO Better error message.
+        else:
+            entries = tuple((None, entry) for entry in entries)
+
+        match table_name:
+
+            case (table_type, table_name):
+
+                values = (
+                    (f'.{name} = {repr_in_c(value)}' for name, value in entry)
+                    for index, entry in entries
+                )
+
+            case table_name:
+
+                members = OrdSet(
+                    f'{type} {name};'
+                    for index, entry in entries
+                    for type, name, value in entry
+                )
+
+                table_type = f'struct {{ {' '.join(members)} }}'
+
+                values = (
+                    (repr_in_c(value) for type, name, value in entry)
+                    for index, entry in entries
+                )
+
+        with self.enter(f'static const {table_type} {table_name}[] ='):
+            for index, value in zip(
+                ljusts('' if index is None else index for index, entry in entries),
+                (f'{{ { ', '.join(value) } }},' for value in ljusts(values)),
+            ):
+                if index:
+                    self.line(f'[{index}] = {value}')
+                else:
+                    self.line(value)
 
 ################################################################ Meta-Directive ################################################################
 

@@ -6,7 +6,13 @@ from ..pxd.utils import ljusts, root, deindent, repr_in_c, mk_dict, Record, OrdS
 
 class MetaError(Exception):
 
-    def __init__(self, diagnostic = None, *, undefined_exported_symbol = None, source_file_path = None, header_line_number = None):
+    def __init__(
+        self,
+        diagnostic                = None, *,
+        undefined_exported_symbol = None,
+        source_file_path          = None,
+        header_line_number        = None
+    ):
         self.diagnostic                = diagnostic
         self.undefined_exported_symbol = undefined_exported_symbol # When a meta-directive doesn't define a symbol it said it'd export.
         self.source_file_path          = source_file_path          # "
@@ -20,27 +26,23 @@ class MetaError(Exception):
 class Meta:
 
     def __init__(self):
-        self.include_file_path = None
+        self.__dict__['include_file_path'] = None
 
 
     def _start(self, include_file_path, source_file_path, include_directive_line_number):
-        self.include_file_path             = include_file_path
-        self.source_file_path              = source_file_path
-        self.include_directive_line_number = include_directive_line_number
-        self.__dict__['output']            = ''
-        self.__dict__['indent']            = 0
-        self.__dict__['within_macro']      = False
-        self.__dict__['overloads']         = {}
+        self.__dict__['include_file_path']             = include_file_path
+        self.__dict__['source_file_path']              = source_file_path
+        self.__dict__['include_directive_line_number'] = include_directive_line_number
+        self.__dict__['output']                        = ''
+        self.__dict__['indent']                        = 0
+        self.__dict__['within_macro']                  = False
+        self.__dict__['overloads']                     = {}
 
 
     def __setattr__(self, key, value):
 
-        if key not in (
-            'include_file_path',
-            'source_file_path',
-            'include_directive_line_number'
-        ) and self.__dict__['include_file_path'] is None:
-            raise RuntimeError(f"The meta-directive needs to have an include-directive to use Meta.")
+        if self.__dict__['include_file_path'] is None and key in ('output', 'indent', 'within_macro', 'overloads'):
+            raise MetaError(ErrorLift(f'The meta-directive needs to have an include-directive to use Meta.'))
 
         self.__dict__[key] = value
 
@@ -463,8 +465,8 @@ def MetaDirective(**info):
             if symbol not in function_globals:
                 raise MetaError(
                     undefined_exported_symbol = symbol,
-                    source_file_path   = info.source_file_path,
-                    header_line_number = info.header_line_number,
+                    source_file_path          = info.source_file_path,
+                    header_line_number        = info.header_line_number,
                 )
 
             info.meta_globals[symbol] = function_globals[symbol]
@@ -518,7 +520,7 @@ def do(*,
         match string.split(':'):
             case [exports         ] : ports = [exports, None   ]
             case [exports, imports] : ports = [exports, imports]
-            case _                  : raise MetaError(f'{diagnostic_header} Too many colons for meta-directive!')
+            case _                  : raise MetaError(f'{diagnostic_header} Too many colons for meta-directive!') # TODO Improve.
 
         return [
             OrdSet(
@@ -714,7 +716,7 @@ def do(*,
             if (collision := include_collisions.get(meta_directive.include_file_path, None)) is None:
                 include_collisions[meta_directive.include_file_path] = meta_directive
             else:
-                raise MetaError(
+                raise MetaError( # TODO Improve.
                     f'# Meta-directives with the same output file path of "{meta_directive.include_file_path}": ' \
                     f'[{meta_directive.source_file_path}:{meta_directive.header_line_number - 1}] and ' \
                     f'[{collision     .source_file_path}:{collision     .header_line_number - 1}].'
@@ -874,8 +876,8 @@ def do(*,
             case builtins.SyntaxError() | builtins.IndentationError():
                 raise err from err
 
-            # Errors that happen outside of the execution of the meta-directive.
-            case MetaError():
+            # Errors that happen outside of the execution of the meta-directive. TODO Questionable.
+            case meta_err if isinstance(meta_err, MetaError) and meta_err.undefined_exported_symbol is not None:
                 stacks += [types.SimpleNamespace(
                     file_path   = root(err.source_file_path),
                     line_number = err.header_line_number,

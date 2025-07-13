@@ -212,7 +212,11 @@ class Meta:
             # enumeration prevents this collision since it's definition is scoped to where
             # it is defined.
             if self.count:
-                self.meta.line(f'enum{enum_type} {{ {self.enum_name}_COUNT = {len(self.members)} }};')
+                # TODO: self.meta.line(f'enum{enum_type} {{ {self.enum_name}_COUNT = {len(self.members)} }};')
+                # TODO: Using `constexpr` is better here so the comparison `an_enum_member < the_enum_COUNT` can be done
+                # without any warnings. Support for `constexpr` might be less than the solution above however,
+                # so it'll be good to be able to switch between the two.
+                self.meta.line(f'constexpr {self.underlying_type} {self.enum_name}_COUNT = {len(self.members)};')
 
 
     def define(self, name, params_or_expansion, expansion=None, do_while=False, **overloading):

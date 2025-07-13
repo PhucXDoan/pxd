@@ -30,13 +30,15 @@ class Meta:
 
 
     def _start(self, include_file_path, source_file_path, include_directive_line_number):
-        self.__dict__['include_file_path']             = include_file_path
-        self.__dict__['source_file_path']              = source_file_path
-        self.__dict__['include_directive_line_number'] = include_directive_line_number
-        self.__dict__['output']                        = ''
-        self.__dict__['indent']                        = 0
-        self.__dict__['within_macro']                  = False
-        self.__dict__['overloads']                     = {}
+        self.__dict__ |= {
+            'include_file_path'              : include_file_path,
+            'source_file_path'               : source_file_path,
+            'include_directive_line_number'  : include_directive_line_number,
+            'output'                         : '',
+            'indent'                         : 0,
+            'within_macro'                   : False,
+            'overloads'                      : {},
+        }
 
 
     def __setattr__(self, key, value):

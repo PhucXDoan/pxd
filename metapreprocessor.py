@@ -314,47 +314,44 @@ class Meta:
                 self.line(f'#define {macro} {expansion}')
 
 
-    def ifs(self, items, *, style):
 
-        def decorator(function):
+    def ifs(self, items, style):
 
-            for item_index, item in enumerate(items):
+        items = tuple(items)
+
+        def decorator(func):
+
+            for item_i, item in enumerate(items):
 
                 #
                 # First iteration of the function should give us the condition of the if-statement.
                 #
 
-                iterator  = function(item)
-                condition = next(iterator)
+                iterator = func(item)
+
+                try:
+                    condition = next(iterator)
+                except StopIteration:
+                    raise RuntimeError(ErrorLift("The function didn't yield for the condition of the if-statement."))
 
                 #
                 # Then generate the if-statement according to the desired style.
                 #
 
-                match style:
-
-                    case 'if':
-                        header  = f'if ({condition})'
-                        opening = None
-                        closing = None
-
-                    case '#if':
-                        header  = f'#if {condition}'
-                        opening = None
-                        closing = None
-
-                    case 'else if':
-                        header  = f'if ({condition})' if item_index == 0 else f'else if ({condition})'
-                        opening = None
-                        closing = None
-
-                    case _: raise ValueError('Unknown `if` style.')
+                match item_i, style:
+                    case _, 'if'      : entrance = (f'if ({condition})'     , None, None                               )
+                    case 0, 'else if' : entrance = (f'if ({condition})'     , None, None                               )
+                    case _, 'else if' : entrance = (f'else if ({condition})', None, None                               )
+                    case _, '#if'     : entrance = (f'#if {condition}'      , None, None                               )
+                    case 0, '#elif'   : entrance = (f'#if {condition}'      , None, '#endif' if len(items) == 1 else '')
+                    case _, '#elif'   : entrance = (f'#elif {condition}'    , None, None                               )
+                    case _            : raise ValueError(ErrorLift(f'Unknown if-statement style of "{style}".'))
 
                 #
                 # Next iteration of the function should generate the code within the if-statement.
                 #
 
-                with self.enter(header, opening, closing):
+                with self.enter(*entrance):
 
                     stopped = False
 
@@ -364,7 +361,7 @@ class Meta:
                         stopped = True
 
                     if not stopped:
-                        raise RuntimeError('Function of Meta.ifs did not return.')
+                        raise RuntimeError(ErrorLift('The function should only yield once to make the if-statement.'))
 
         return decorator
 
@@ -373,7 +370,7 @@ class Meta:
     def lut(self, table_name, entries):
 
         # e.g: Meta.lut(table_name, (f(x) for x in xs))
-        entries = list(entries)
+        entries = tuple(entries)
 
 
         # If the first element of every entry's field-list is a non-tuple,

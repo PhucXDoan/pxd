@@ -1,6 +1,6 @@
 import pathlib, types, contextlib, re, traceback, builtins, sys, copy
 from ..pxd.log   import log
-from ..pxd.utils import ljusts, root, deindent, repr_in_c, mk_dict, Record, OrdSet, ErrorLift
+from ..pxd.utils import ljusts, root, deindent, repr_in_c, mk_dict, find_dupe, Record, OrdSet, ErrorLift
 
 # TODO Warn on unused symbols.
 
@@ -368,48 +368,109 @@ class Meta:
 
         return decorator
 
+
+
     def lut(self, table_name, entries):
 
-        entries = tuple(entries)
+        # e.g: Meta.lut(table_name, (f(x) for x in xs))
+        entries = list(entries)
 
-        if all(len(entry) == 2 and not isinstance(entry[0], tuple) for entry in entries):
-            entries = tuple((index, entry) for index, entry in mk_dict(entries).items()) # TODO Better error message.
+
+        # If the first element of every entry's field-list is a non-tuple,
+        # then we assume that is the index of the entry.
+        # e.g:
+        #     Meta.lut(table_name, ((
+        #         index,
+        #         (type, name, value),
+        #         (type, name, value),
+        #         (type, name, value),
+        #     ) for x in xs))
+        if all(entry and not isinstance(entry[0], tuple) for entry in entries):
+            indices = [repr_in_c(index) for index, *fields in entries]
+            entries = [fields           for index, *fields in entries]
+
+        # The entries of the look-up table will be defined in sequential order with no explicit indices.
+        # e.g:
+        #     Meta.lut(table_name, ((
+        #         (type, name, value),
+        #         (type, name, value),
+        #         (type, name, value),
+        #     ) for x in xs))
         else:
-            entries = tuple((None, entry) for entry in entries)
+            indices = None
+
 
         match table_name:
 
+            # If the type for the look-up table's entries is given,
+            # then each field won't be specified a type.
+            # e.g:
+            #     Meta.lut((table_type, table_name), ((
+            #         (name, value),
+            #         (name, value),
+            #         (name, value),
+            #     ) for x in xs))
             case (table_type, table_name):
 
-                values = (
-                    (f'.{name} = {repr_in_c(value)}' for name, value in entry)
-                    for index, entry in entries
-                )
+                values = [
+                    [f'.{name} = {repr_in_c(value)}' for name, value in entry]
+                    for entry in entries
+                ]
 
+                field_names_per_entry = [
+                    (name for name, value in entry)
+                    for entry in entries
+                ]
+
+
+            # If the type for the look-up table's entries is not given,
+            # then we'll create the type based on the type of each field.
+            # e.g:
+            #     Meta.lut(table_name, ((
+            #         (type, name, value),
+            #         (type, name, value),
+            #         (type, name, value),
+            #     ) for x in xs))
             case table_name:
 
                 members = OrdSet(
                     f'{type} {name};'
-                    for index, entry in entries
+                    for entry in entries
                     for type, name, value in entry
                 )
 
                 table_type = f'struct {{ {' '.join(members)} }}'
 
-                values = (
-                    (repr_in_c(value) for type, name, value in entry)
-                    for index, entry in entries
-                )
+                values = [
+                    [repr_in_c(value) for type, name, value in entry]
+                    for entry in entries
+                ]
+
+                field_names_per_entry = [
+                    [name for type, name, value in entry]
+                    for entry in entries
+                ]
+
+        #
+        # Output the look-up table.
+        #
+
+        if indices is not None and (dupe := find_dupe(indices)) is not None:
+            raise ValueError(ErrorLift(f'Look-up table has duplicate index of "{dupe}".'))
+
+        for field_names in field_names_per_entry:
+            if (dupe := find_dupe(field_names)) is not None:
+                raise ValueError(ErrorLift(f'Look-up table has an entry with duplicate field of "{dupe}".'))
+
+        lines = ['{ ' + ', '.join(value) + ' },' for value in ljusts(values)]
+
+        if indices is not None:
+            lines = [f'[{index}] = {value}' for index, value in zip(ljusts(indices), lines)]
 
         with self.enter(f'static const {table_type} {table_name}[] ='):
-            for index, value in zip(
-                ljusts('' if index is None else index for index, entry in entries),
-                (f'{{ { ', '.join(value) } }},' for value in ljusts(values)),
-            ):
-                if index:
-                    self.line(f'[{index}] = {value}')
-                else:
-                    self.line(value)
+            self.line(lines)
+
+
 
 ################################################################ Meta-Directive ################################################################
 

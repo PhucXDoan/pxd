@@ -710,6 +710,9 @@ def do(*,
                 # See if there's a block comment with #meta.
                 #
 
+                if not remaining_lines:
+                    continue
+
                 header_line            = remaining_lines[0]
                 header_line_number     = remaining_line_number
                 remaining_lines        = remaining_lines[1:]

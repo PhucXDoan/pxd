@@ -997,6 +997,9 @@ def do(*,
         if err.args and isinstance(err.args[0], ErrorLift):
             stacks = stacks[:-1]
 
+        if isinstance(err, MetaError) and not err.args: # Meta-directive logged the error.
+            raise MetaError() from err
+
         #
         # Log the diagnostics.
         #

@@ -88,22 +88,27 @@ class Meta:
         open(self.include_file_path, 'w').write(self.output)
 
 
-    def line(self, input = '\n\n\n'): # TODO More consistent trimming of newlines.
+    def line(self, *inputs): # TODO More consistent trimming of newlines.
 
-        strings = []
+        if not inputs:
+            inputs = ['\n\n\n']
 
-        match input:
-            case types.GeneratorType() : strings = list(input)
-            case list()                : strings = input
-            case str()                 : strings = [input]
-            case _                     : raise TypeError('Input type not supported.')
+        for input in inputs:
 
-        for string in strings:
+            strings = []
 
-            deindented_string = deindent(string)
+            match input:
+                case types.GeneratorType() : strings = list(input)
+                case list()                : strings = input
+                case str()                 : strings = [input]
+                case _                     : raise TypeError('Input type not supported.')
 
-            for line in deindented_string.splitlines():
-                self.output += (((' ' * 4 * self.indent) + line) + (' \\' if self.within_macro else '')).rstrip() + '\n'
+            for string in strings:
+
+                deindented_string = deindent(string)
+
+                for line in deindented_string.splitlines():
+                    self.output += (((' ' * 4 * self.indent) + line) + (' \\' if self.within_macro else '')).rstrip() + '\n'
 
 
     @contextlib.contextmanager

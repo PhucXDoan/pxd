@@ -7,7 +7,7 @@ def round_up(x, n = 1):
 
 ################################################################################################################################
 
-def inverse_of(xs, func = None):
+def coalesce(xs, func = None):
 
     inverse = collections.defaultdict(lambda: [])
 

@@ -322,7 +322,7 @@ def find(
         # Find all the citations and group them based on the source.
         #
 
-        sources_named = inverse_of(ledger.citations, lambda x: (x.source_type, x.source_name))
+        sources_named = coalesce(ledger.citations, lambda x: (x.source_type, x.source_name))
 
         def source_sorting(item):
 

@@ -83,7 +83,7 @@ def parse(input):
 
 
 
-    # Recursively parse the s-expression.
+    # Recursively parse the S-expression.
 
     def eat_expr():
 

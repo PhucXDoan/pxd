@@ -11,6 +11,11 @@ class Error(Exception):
 
 class Atom(str):
 
+    def __new__(cls, value):
+        obj = super().__new__(cls, value)
+        obj.string = value
+        return obj
+
     def __repr__(self):
         return str(self)
 

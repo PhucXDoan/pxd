@@ -9,6 +9,10 @@ class Error(Exception):
 
 
 
+#
+# To represent unquoted symbols.
+#
+
 class Atom(str):
 
     def __new__(cls, value):
@@ -23,6 +27,9 @@ class Atom(str):
         return f'Atom({super().__repr__()})'
 
 
+#
+# The S-expression parser itself.
+#
 
 def parse(input):
 
@@ -231,3 +238,16 @@ def parse(input):
         raise Error(f'On line {line_number}, additional tokens were found; input should just be a single value.')
 
     return result
+
+
+
+#
+# Routine to convert parsed subexpressions which contain Atoms into regular strings.
+#
+
+def deatomize(value):
+    match value:
+        case Atom()  : return value.string
+        case tuple() : return tuple(map(deatomize, value))
+        case list()  : return list (map(deatomize, value))
+        case _       : return value

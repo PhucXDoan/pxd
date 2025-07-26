@@ -164,7 +164,7 @@ def parse(input):
 
                 found_end_quote = input[0] == quote and value != ''
 
-                if input[0] in ('"', "'") and value == '':
+                if input[0] in ('"', "'", '`') and value == '':
                     quote = input[0]
 
 
@@ -198,26 +198,36 @@ def parse(input):
 
                 match value:
 
+                    # Some direct substituations.
                     case 'False' : return False
                     case 'True'  : return True
                     case 'None'  : return None
 
                     case _:
 
+                        # Symbols that are quoted with backticks are to be evaluated literally.
+                        # e.g. (a b `2 + 2` c d)   ->   (a b 4 c d)
+                        if quote == '`':
+                            return eval(value[1:-1], {}, {})
+
+                        # Other quoted symbols will just be a Python string.
                         if quote:
                             return value[1:-1]
 
+                        # Attempting to parse as an integer.
                         try:
                             return int(value)
                         except ValueError:
                             pass
 
+                        # Attempting to parse as a float.
                         try:
                             return float(value)
                         except ValueError:
                             pass
 
-                return Atom(value) # To indicate that the symbol was unquoted.
+                # We indicate that the symbol was unquoted.
+                return Atom(value)
 
             return mapper(value, quote)
 

@@ -27,11 +27,53 @@ class Atom(str):
         return f'Atom({super().__repr__()})'
 
 
+
+#
+# Default routine for conversions of S-expression symbols to Python values.
+#
+
+def default_mapping(value, quote): # TODO This can be exposed to the caller to be customized.
+
+    match value:
+
+        # Some direct substituations.
+        case 'False' : return False
+        case 'True'  : return True
+        case 'None'  : return None
+
+        case _:
+
+            # Symbols that are quoted with backticks are to be evaluated literally.
+            # e.g. (a b `2 + 2` c d)   ->   (a b 4 c d)
+            if quote == '`':
+                return eval(value[1:-1], {}, {})
+
+            # Other quoted symbols will just be a Python string.
+            if quote:
+                return value[1:-1]
+
+            # Attempting to parse as an integer.
+            try:
+                return int(value)
+            except ValueError:
+                pass
+
+            # Attempting to parse as a float.
+            try:
+                return float(value)
+            except ValueError:
+                pass
+
+    # We indicate that the symbol was unquoted.
+    return Atom(value)
+
+
+
 #
 # The S-expression parser itself.
 #
 
-def parse(input):
+def parse(input, mapping = default_mapping):
 
     line_number = 1
 
@@ -194,42 +236,7 @@ def parse(input):
 
             assert value
 
-            def mapper(value, quote): # TODO This can be exposed to the caller to be customized.
-
-                match value:
-
-                    # Some direct substituations.
-                    case 'False' : return False
-                    case 'True'  : return True
-                    case 'None'  : return None
-
-                    case _:
-
-                        # Symbols that are quoted with backticks are to be evaluated literally.
-                        # e.g. (a b `2 + 2` c d)   ->   (a b 4 c d)
-                        if quote == '`':
-                            return eval(value[1:-1], {}, {})
-
-                        # Other quoted symbols will just be a Python string.
-                        if quote:
-                            return value[1:-1]
-
-                        # Attempting to parse as an integer.
-                        try:
-                            return int(value)
-                        except ValueError:
-                            pass
-
-                        # Attempting to parse as a float.
-                        try:
-                            return float(value)
-                        except ValueError:
-                            pass
-
-                # We indicate that the symbol was unquoted.
-                return Atom(value)
-
-            return mapper(value, quote)
+            return mapping(value, quote)
 
 
 

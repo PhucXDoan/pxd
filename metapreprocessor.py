@@ -372,46 +372,81 @@ class Meta:
 
 
 
+    # Helper routine to create look-up tables.
+    #
+    # Example:
+    # >
+    # >    Meta.lut('PLANETS', ((
+    # >        ('char*', 'name'  , planet.name  ),
+    # >        ('f32'  , 'mass'  , planet.mass  ),
+    # >        ('f32'  , 'radius', planet.radius),
+    # >    ) for planet in planets))
+    # >
+    #
+    # Output:
+    # >
+    # >    static const struct { char* name; f32 mass; f32 radius; } PLANETS[] =
+    # >        {
+    # >            { .name = <value>, .mass = <value>, .radius = <value> },
+    # >            { .name = <value>, .mass = <value>, .radius = <value> },
+    # >            { .name = <value>, .mass = <value>, .radius = <value> },
+    # >        };
+    # >
+
     def lut(self, table_name, entries):
 
-        # e.g: Meta.lut(table_name, (f(x) for x in xs))
+
+
+        # e.g: Meta.lut(<table_name>, (f(x) for x in xs))
+
         entries = tuple(entries)
 
 
-        # If the first element of every entry's field-list is a non-tuple,
-        # then we assume that is the index of the entry.
+
+        # If the first element of every entry's field-list is a non-tuple, then we assume that is the index of the entry.
         # e.g:
-        #     Meta.lut(table_name, ((
-        #         index,
-        #         (type, name, value),
-        #         (type, name, value),
-        #         (type, name, value),
-        #     ) for x in xs))
+        #     Meta.lut(<table_name>, ((             static const struct { <type> <name>; <type> <name>; <type> <name>; } <table_name>[] =
+        #         <index>,                              {
+        #         (<type>, <name>, <value>),   ->           [<index>] = { .<name> = <value>, .<name> = <value>, .<name> = <value> },
+        #         (<type>, <name>, <value>),                [<index>] = { .<name> = <value>, .<name> = <value>, .<name> = <value> },
+        #         (<type>, <name>, <value>),                [<index>] = { .<name> = <value>, .<name> = <value>, .<name> = <value> },
+        #     ) for x in xs))                           };
+
         if all(entry and not isinstance(entry[0], tuple) for entry in entries):
             indices = [repr_in_c(index) for index, *fields in entries]
             entries = [fields           for index, *fields in entries]
 
+
+
         # The entries of the look-up table will be defined in sequential order with no explicit indices.
         # e.g:
-        #     Meta.lut(table_name, ((
-        #         (type, name, value),
-        #         (type, name, value),
-        #         (type, name, value),
-        #     ) for x in xs))
+        #     Meta.lut(<table_name>, ((             static const struct { <type> <name>; <type> <name>; <type> <name>; } <table_name>[] =
+        #         (<type>, <name>, <value>),            {
+        #         (<type>, <name>, <value>),   ->           { .<name> = <value>, .<name> = <value>, .<name> = <value> },
+        #         (<type>, <name>, <value>),                { .<name> = <value>, .<name> = <value>, .<name> = <value> },
+        #     ) for x in xs))                               { .<name> = <value>, .<name> = <value>, .<name> = <value> },
+        #                                               };
+
         else:
             indices = None
 
 
+
+        # The "table_name" argument can specify the type of the look-up table.
+
         match table_name:
 
-            # If the type for the look-up table's entries is given,
-            # then each field won't be specified a type.
+
+
+            # If the type for the look-up table's entries is given, then each field shouldn't have to specify the type.
             # e.g:
-            #     Meta.lut((table_type, table_name), ((
-            #         (name, value),
-            #         (name, value),
-            #         (name, value),
-            #     ) for x in xs))
+            #     Meta.lut((table_type, table_name), ((        static const <table_type> <table_name>[] =
+            #         (name, value),                               {
+            #         (name, value),                      ->           { .<name> = <value>, .<name> = <value>, .<name> = <value> },
+            #         (name, value),                                   { .<name> = <value>, .<name> = <value>, .<name> = <value> },
+            #     ) for x in xs))                                      { .<name> = <value>, .<name> = <value>, .<name> = <value> },
+            #                                                      };
+
             case (table_type, table_name):
 
                 values = [
@@ -425,14 +460,16 @@ class Meta:
                 ]
 
 
-            # If the type for the look-up table's entries is not given,
-            # then we'll create the type based on the type of each field.
+
+            # If the type for the look-up table's entries is not given, then we'll create the type based on the type of each field.
             # e.g:
-            #     Meta.lut(table_name, ((
-            #         (type, name, value),
-            #         (type, name, value),
-            #         (type, name, value),
-            #     ) for x in xs))
+            #     Meta.lut(<table_name>, ((             static const struct { <type> <name>; <type> <name>; <type> <name>; } <table_name>[] =
+            #         (<type>, <name>, <value>),            {
+            #         (<type>, <name>, <value>),   ->           { .<name> = <value>, .<name> = <value>, .<name> = <value> },
+            #         (<type>, <name>, <value>),                { .<name> = <value>, .<name> = <value>, .<name> = <value> },
+            #     ) for x in xs))                               { .<name> = <value>, .<name> = <value>, .<name> = <value> },
+            #                                               };
+
             case table_name:
 
                 members = OrdSet(
@@ -453,9 +490,9 @@ class Meta:
                     for entry in entries
                 ]
 
-        #
-        # Output the look-up table.
-        #
+
+
+        # Some coherency checks.
 
         if indices is not None and (dupe := find_dupe(indices)) is not None:
             raise ValueError(ErrorLift(f'Look-up table has duplicate index of "{dupe}".'))
@@ -463,6 +500,10 @@ class Meta:
         for field_names in field_names_per_entry:
             if (dupe := find_dupe(field_names)) is not None:
                 raise ValueError(ErrorLift(f'Look-up table has an entry with duplicate field of "{dupe}".'))
+
+
+
+        # Output the look-up table.
 
         lines = ['{ ' + ', '.join(value) + ' },' for value in ljusts(values)]
 

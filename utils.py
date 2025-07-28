@@ -109,7 +109,7 @@ def ljusts(elems, include_keys = False):
 
 ################################################################################################################################
 
-def deindent(lines_or_a_string, remove_leading_newline = True):
+def deindent(lines_or_a_string, *, remove_leading_newline = True, single_line_comment = None):
 
     match lines_or_a_string:
         case str() : lines = lines_or_a_string.splitlines()
@@ -124,7 +124,7 @@ def deindent(lines_or_a_string, remove_leading_newline = True):
 
         line_indent = len(line) - len(line.lstrip(' '))
 
-        if global_indent is None and line.strip() != '':
+        if global_indent is None and line.strip() != '' and (single_line_comment is None or not line.strip().startswith(single_line_comment)):
             global_indent = line_indent
 
         lines[line_i] = line.removeprefix(' ' * min(line_indent, global_indent or 0))

@@ -767,7 +767,7 @@ def do(*,
                             line   = line.rstrip()
                             lines += [line]
 
-                        lines = deindent(lines, remove_leading_newline = False)
+                        lines = deindent(lines, remove_leading_newline = False, single_line_comment = '#')
 
                         meta_directives += [types.SimpleNamespace(
                             source_file_path   = source_file_path,

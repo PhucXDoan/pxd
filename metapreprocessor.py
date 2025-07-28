@@ -320,6 +320,33 @@ class Meta:
 
 
 
+    ################################################################################################################################
+    #
+    # Helper routine to create multiple if-statements.
+    #
+    # Example:
+    # >
+    # >    @Meta.ifs(['A', 'B', 'C'], '#elif')
+    # >    def _(x):
+    # >
+    # >        ...
+    # >
+    # >        yield f'check({x})'
+    # >
+    # >        ...
+    # >
+    #
+    # Output:
+    # >
+    # >    #if check(A)
+    # >        ...
+    # >    #elif check(B)
+    # >        ...
+    # >    #elif check(C)
+    # >        ...
+    # >    #endif
+    # >
+
     def ifs(self, items, style):
 
         items = tuple(items)
@@ -328,9 +355,9 @@ class Meta:
 
             for item_i, item in enumerate(items):
 
-                #
+
+
                 # First iteration of the function should give us the condition of the if-statement.
-                #
 
                 iterator = func(item)
 
@@ -339,9 +366,9 @@ class Meta:
                 except StopIteration:
                     raise RuntimeError(ErrorLift("The function didn't yield for the condition of the if-statement."))
 
-                #
+
+
                 # Then generate the if-statement according to the desired style.
-                #
 
                 match item_i, style:
                     case _, 'if'      : entrance = (f'if ({condition})'     , None, None                               )
@@ -352,9 +379,9 @@ class Meta:
                     case _, '#elif'   : entrance = (f'#elif {condition}'    , None, None                               )
                     case _            : raise ValueError(ErrorLift(f'Unknown if-statement style of "{style}".'))
 
-                #
+
+
                 # Next iteration of the function should generate the code within the if-statement.
-                #
 
                 with self.enter(*entrance):
 
@@ -368,10 +395,14 @@ class Meta:
                     if not stopped:
                         raise RuntimeError(ErrorLift('The function should only yield once to make the if-statement.'))
 
+
+
         return decorator
 
 
 
+    ################################################################################################################################
+    #
     # Helper routine to create look-up tables.
     #
     # Example:

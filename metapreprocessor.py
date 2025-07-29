@@ -768,7 +768,7 @@ def do(*,
     # Routine to parse the C preprocessor's include-directive.
     #
 
-    def breakdown_include_directive_line(line):
+    def get_include_directive_file_path(line):
 
 
 
@@ -838,144 +838,141 @@ def do(*,
 
     for source_file_path in source_file_paths:
 
-        remaining_lines       = open(source_file_path, 'rb').read().decode('UTF-8').splitlines()
+        remaining_lines       = source_file_path.read_text().splitlines()
         remaining_line_number = 1
 
-        # Python file that might just be a big meta-directive.
-        if source_file_path.suffix == '.py':
+        while True:
 
-            while remaining_lines:
 
-                #
-                # See if there's an #include directive.
-                #
 
-                include_line = None
+            # Check if the current line is an include-directive.
 
-                if (include_file_path := breakdown_include_directive_line(remaining_lines[0])) is not None:
-                    include_line           = remaining_lines[0 ]
-                    remaining_lines        = remaining_lines[1:]
-                    remaining_line_number += 1
+            if not remaining_lines:
+                break
 
-                #
-                # See if there's a #meta.
-                #
+            include_directive_file_path = get_include_directive_file_path(remaining_lines[0])
 
-                header_line            = remaining_lines[0]
-                header_line_number     = remaining_line_number
+            if include_directive_file_path is not None:
                 remaining_lines        = remaining_lines[1:]
                 remaining_line_number += 1
 
-                diagnostic_header  = ''
-                diagnostic_header  = '#' * 64 + '\n'
-                diagnostic_header += f'{header_line.strip()}\n'
-                diagnostic_header += '#' * 64 + '\n'
-                diagnostic_header += f'# [{source_file_path}:{header_line_number}]'
 
-                tmp = header_line
-                tmp = tmp.strip()
-                if tmp.startswith('#meta'):
-                    tmp = tmp.removeprefix('#meta')
-                    tmp = tmp.strip()
 
-                    exports, imports = get_ports(tmp)
+            # We'll be now checking if the current line is a meta-header.
 
-                    meta_directives += [types.SimpleNamespace(
-                        source_file_path   = source_file_path,
-                        header_line_number = header_line_number,
-                        include_file_path  = include_file_path,
-                        exports            = exports,
-                        imports            = imports,
-                        lines              = remaining_lines,
-                    )]
+            if not remaining_lines:
+                break
 
-                    break # The rest of the file is the entire #meta directive.
+            meta_header_line         = remaining_lines[0]
+            meta_header_line_number  = remaining_line_number
+            remaining_lines          = remaining_lines[1:]
+            remaining_line_number   += 1
 
-                elif tmp:
-                    break # First non-empty line is not a #meta directive.
 
-        # Assuming C file.
-        else:
 
-            while remaining_lines:
+            # Only in Python files that meta-headers are not prefixed with `/*`.
 
-                #
-                # See if there's an #include directive.
-                #
+            if source_file_path.suffix != '.py':
 
-                include_line = None
+                meta_header_line = meta_header_line.strip()
 
-                if (include_file_path := breakdown_include_directive_line(remaining_lines[0])) is not None:
-                    include_line           = remaining_lines[0 ]
-                    remaining_lines        = remaining_lines[1:]
-                    remaining_line_number += 1
-
-                #
-                # See if there's a block comment with #meta.
-                #
-
-                if not remaining_lines:
+                if not meta_header_line.startswith(prefix := '/*'):
                     continue
 
-                header_line            = remaining_lines[0]
-                header_line_number     = remaining_line_number
-                remaining_lines        = remaining_lines[1:]
-                remaining_line_number += 1
+                meta_header_line = meta_header_line.removeprefix(prefix)
 
-                diagnostic_header  = ''
-                diagnostic_header  = '#' * 64 + '\n'
-                if include_line is not None:
-                    diagnostic_header += f'{include_line.strip()}\n'
-                diagnostic_header += f'{header_line.strip()}\n'
-                diagnostic_header += '#' * 64 + '\n'
-                diagnostic_header += f'# [{source_file_path}:{header_line_number}]'
 
-                tmp = header_line
-                tmp = tmp.strip()
-                if tmp.startswith('/*'):
-                    tmp = tmp.removeprefix('/*')
-                    tmp = tmp.strip()
 
-                    if tmp.startswith('#meta'):
-                        tmp = tmp.removeprefix('#meta')
-                        tmp = tmp.strip()
+            # Check for the meta-header tag.
 
-                        exports, imports = get_ports(tmp)
+            meta_header_line = meta_header_line.strip()
 
-                        #
-                        # Get lines of the block comment.
-                        #
+            if not meta_header_line.startswith(prefix := '#meta'):
 
-                        lines  = []
-                        ending = -1
+                if not meta_header_line.startswith('#') and source_file_path.suffix == '.py':
 
-                        while ending == -1:
+                    break # Python files that are meta-directives should have the meta-header at the top.
 
-                            # Pop a line of the block comment.
-                            if not remaining_lines:
-                                raise MetaError(f'{diagnostic_header} Meta-directive without a closing `*/`!')
-                            line                   = remaining_lines[0]
-                            remaining_lines        = remaining_lines[1:]
-                            remaining_line_number += 1
+                else:
 
-                            # Truncate up to the end of the block comment.
-                            if (ending := line.find('*/')) != -1:
-                                line = line[:ending]
+                    continue
 
-                            # Got line!
-                            line   = line.rstrip()
-                            lines += [line]
+            meta_header_line = meta_header_line.removeprefix(prefix)
 
-                        lines = deindent(lines, remove_leading_newline = False, single_line_comment = '#')
 
-                        meta_directives += [types.SimpleNamespace(
-                            source_file_path   = source_file_path,
-                            header_line_number = header_line_number,
-                            include_file_path  = include_file_path,
-                            exports            = exports,
-                            imports            = imports,
-                            lines              = lines,
-                        )]
+
+            # We parse the meta-header.
+
+            exports, imports = get_ports(meta_header_line)
+
+
+
+            # Get the lines of the meta-directive.
+
+            body_lines = []
+
+            match source_file_path.suffix:
+
+
+                # Python files are interpreted as the entire meta-directive.
+
+                case '.py':
+
+                    body_lines             = remaining_lines
+                    remaining_line_number += len(remaining_lines)
+                    remaining_lines        = []
+
+
+
+                # The end of the meta-directive is denoted by `*/`.
+
+                case _:
+
+                    ending = -1
+
+                    while ending == -1:
+
+
+
+                        # Get next line of the body.
+
+                        if not remaining_lines:
+                            assert False
+
+                        body_line              = remaining_lines[0]
+                        remaining_lines        = remaining_lines[1:]
+                        remaining_line_number += 1
+
+
+
+                        # Check if we have found the ending.
+
+                        ending = body_line.find('*/')
+
+                        if ending != -1:
+                            body_line = body_line[:ending]
+
+
+
+                        # Append.
+
+                        body_line   = body_line.rstrip()
+                        body_lines += [body_line]
+
+
+
+            # Finished processing this meta-directive.
+
+            meta_directives += [types.SimpleNamespace(
+                source_file_path            = source_file_path,
+                meta_header_line_number     = meta_header_line_number,
+                include_directive_file_path = include_directive_file_path,
+                exports                     = exports,
+                imports                     = imports,
+                body_lines                  = deindent('\n'.join(body_lines)).splitlines(),
+            )]
+
+
 
     #
     # Process the meta-directives' parameters.
@@ -983,13 +980,13 @@ def do(*,
 
     include_collisions = {}
     for meta_directive in meta_directives:
-        if meta_directive.include_file_path is not None:
-            if (collision := include_collisions.get(meta_directive.include_file_path, None)) is None:
-                include_collisions[meta_directive.include_file_path] = meta_directive
+        if meta_directive.include_directive_file_path is not None:
+            if (collision := include_collisions.get(meta_directive.include_directive_file_path, None)) is None:
+                include_collisions[meta_directive.include_directive_file_path] = meta_directive
             else:
                 raise MetaError( # TODO Improve.
-                    f'# Meta-directives with the same output file path of "{meta_directive.include_file_path}": ' \
-                    f'[{meta_directive.source_file_path}:{meta_directive.header_line_number - 1}] and ' \
+                    f'# Meta-directives with the same output file path of "{meta_directive.include_directive_file_path}": ' \
+                    f'[{meta_directive.source_file_path}:{meta_directive.meta_header_line_number - 1}] and ' \
                     f'[{collision     .source_file_path}:{collision     .header_line_number - 1}].'
                 )
 
@@ -1058,12 +1055,12 @@ def do(*,
     # Additional context.
     for meta_directive_i, meta_directive in enumerate(meta_directives):
 
-        if meta_directive.include_file_path is None:
+        if meta_directive.include_directive_file_path is None:
             include_file_path             = None
             include_directive_line_number = None
         else:
-            include_file_path             = f"r'{meta_directive.include_file_path}'"
-            include_directive_line_number =      meta_directive.header_line_number - 1
+            include_file_path             = f"r'{meta_directive.include_directive_file_path}'"
+            include_directive_line_number =      meta_directive.meta_header_line_number - 1
 
         if meta_directive.imports == OrdSet():
             imports = {} # The meta-directive explicitly has no imports.
@@ -1077,7 +1074,7 @@ def do(*,
             @MetaDirective(
                 index                         = {meta_directive_i},
                 source_file_path              = r'{meta_directive.source_file_path}',
-                header_line_number            = {meta_directive.header_line_number},
+                header_line_number            = {meta_directive.meta_header_line_number},
                 include_file_path             = {include_file_path            },
                 include_directive_line_number = {include_directive_line_number},
                 exports                       = [{exports}],
@@ -1095,13 +1092,13 @@ def do(*,
         # If the #meta directive has no code and doesn't export anything,
         # the function would end up empty, which is invalid Python syntax;
         # having a `pass` is a simple fix for this edge case.
-        if not any(line.strip() and line.strip()[0] != '#' for line in meta_directive.lines) and not meta_directive.exports:
+        if not any(line.strip() and line.strip()[0] != '#' for line in meta_directive.body_lines) and not meta_directive.exports:
             meta_py += ['    pass']
 
         # Inject the #meta directive's Python snippet.
         meta_py += ['']
         meta_directive.meta_py_line_number = len(meta_py) + 1
-        for line in meta_directive.lines:
+        for line in meta_directive.body_lines:
             meta_py += [f'    {line}' if line else '']
         meta_py += ['']
 

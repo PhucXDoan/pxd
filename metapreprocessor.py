@@ -111,12 +111,46 @@ class Meta:
                     self.output += (((' ' * 4 * self.indent) + line) + (' \\' if self.within_macro else '')).rstrip() + '\n'
 
 
+    ################################################################################################################################
+    #
+    # Helper routine to handle scopes.
+    #
+    # Example:
+    # >
+    # >    with Meta.enter('#if CONDITION'):
+    # >        ...
+    # >
+    # >    with Meta.enter('if (CONDITION)'):
+    # >        ...
+    # >
+    # >    with Meta.enter('#define MACRO'):
+    # >        ...
+    # >
+    #
+    # Output:
+    # >
+    # >    #if CONDITION
+    # >        ...
+    # >    #endif
+    # >
+    # >    if (CONDITION)
+    # >    {
+    # >        ...
+    # >    }
+    # >
+    # >    #define MACRO \
+    # >        ... \
+    # >        ... \
+    # >        ... \
+    # >
+    #
+
     @contextlib.contextmanager
     def enter(self, header = None, opening = None, closing = None, *, indented = None):
 
-        #
-        # Automatically determine the scope parameters.
-        #
+
+
+        # Determine the scope parameters.
 
         header_is = lambda *keywords: header is not None and re.search(fr'^\s*({'|'.join(keywords)})\b', header)
 
@@ -134,9 +168,9 @@ class Meta:
         if closing  is None: closing  = suggestion[1]
         if indented is None: indented = suggestion[2]
 
-        #
+
+
         # Header and opening lines.
-        #
 
         if header is not None:
             self.line(header)
@@ -147,17 +181,17 @@ class Meta:
         if opening:
             self.line(opening)
 
-        #
+
+
         # Body.
-        #
 
         self.indent += 1
         yield
         self.indent -= 1
 
-        #
+
+
         # Closing lines.
-        #
 
         if closing is not None:
             self.line(closing)
@@ -168,6 +202,7 @@ class Meta:
         if defining_macro:
             self.within_macro = False
             self.line()
+
 
 
     ################################################################################################################################

@@ -226,95 +226,134 @@ class Meta:
                 self.meta.line(f'constexpr {self.underlying_type} {self.enum_name}_COUNT = {len(self.members)};')
 
 
-    def define(self, name, params_or_expansion, expansion=None, do_while=False, **overloading):
+
+    ################################################################################################################################
+    #
+    # Helper routine to create C macro definitions.
+    #
+
+    def define(self, *args, do_while = False, **overloading):
+
+
+
+        # Parse syntax of the call.
+
+        match args:
+
+
+
+            # e.g: Meta.define('PI', 3.1415)
+
+            case [name, expansion]:
+                parameters = None
+
+
+
+            # e.g: Meta.define('MAX', ('X', 'Y'), '((X) < (Y) ? (Y) : (X))')
+
+            case [name, (*parameters,), expansion]:
+                pass
+
+
+
+            # e.g: Meta.define('TWICE', ('X'), '((X) * 2)')
+            # e.g: Meta.define('PI'   , None , 3.1415     )
+
+            case [name, parameter, expansion]:
+                if parameter is None:
+                    parameters = None
+                else:
+                    parameters = [parameter]
+
+
+
+            # Unknown syntax.
+
+            case _:
+                assert False
+
+
 
         if overloading:
 
-            #
-            # Determine if the caller provided parameters.
-            #
+
+
+            # Some coherency checks.
 
             if expansion is None:
                 raise ValueError('When overloading a macro ("{name}"), a tuple of parameter names and a string for the expansion must be given.')
 
-            params    = params_or_expansion
-            expansion = expansion
-
-            if isinstance(params, str): # The parameter-list can just be a single string to represent a single argument.
-                params = (params,)
-            elif params is not None:
-                params = list(params)
-
             for key in overloading:
-                if key not in params:
-                    raise ValueError(f'Overloading a macro ("{name}") on the parameter "{key}", but it\'s not in the parameter-list: {params}.')
+                if key not in parameters:
+                    raise ValueError(f'Overloading a macro ("{name}") on the parameter "{key}", but it\'s not in the parameter-list: {parameters}.')
 
-            #
-            # Make note of the fact that there'll be "multiple instances" of the same macro.
-            #
+
+
+            # Make note of the fact that there'll be multiple instances of the "same macro".
 
             if name in self.overloads:
-                if self.overloads[name] != (params, list(overloading.keys())):
+                if self.overloads[name] != (parameters, list(overloading.keys())):
                     raise ValueError(f'Cannot overload a macro ("{name}") with differing overloaded parameters.')
             else:
-                self.overloads[name] = (params, list(overloading.keys()))
+                self.overloads[name] = (parameters, list(overloading.keys()))
 
 
-            #
+
             # Define the macro instance.
-            #
 
             self.define(
                 f'_{name}__{'__'.join(map(str, overloading.values()))}',
-                [param for param in params if param not in overloading] or None,
+                [param for param in parameters if param not in overloading] or None,
                 expansion,
             )
 
         else:
 
-            #
+
+
             # Determine if the caller provided parameters.
-            #
-
-            if expansion is None:
-                params    = None
-                expansion = params_or_expansion
-            else:
-                params    = params_or_expansion
-                expansion = expansion
-
-            if isinstance(params, str): # The parameter-list can just be a single string to represent a single argument.
-                params = (params,)
-            elif params is not None:
-                params = list(params)
 
             expansion = deindent(repr_in_c(expansion))
 
-            if params is None:
+            if parameters is None:
                 macro = f'{name}'
             else:
-                macro = f'{name}({', '.join(params)})'
+                macro = f'{name}({', '.join(parameters)})'
+
 
 
             # Generate macro that spans multiple lines.
+
             if '\n' in expansion:
 
                 with self.enter(f'#define {macro}'):
 
+
+
                     # Generate multi-lined macro wrapped in do-while.
+
                     if do_while:
                         with self.enter('do', '{', '}\nwhile (false)'):
                             self.line(expansion)
 
+
+
                     # Generate unwrapped multi-lined macro.
+
                     else:
                         self.line(expansion)
 
+
+
             # Generate single-line macro wrapped in do-while.
+
             elif do_while:
                 self.line(f'#define {macro} do {{ {expansion} }} while (false)')
 
+
+
             # Generate unwrapped single-line macro.
+
             else:
                 self.line(f'#define {macro} {expansion}')
 

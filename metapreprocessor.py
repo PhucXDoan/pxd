@@ -510,12 +510,12 @@ class Meta:
 
             # If the type for the look-up table's entries is given, then each field shouldn't have to specify the type.
             # e.g:
-            #     Meta.lut((table_type, table_name), ((        static const <table_type> <table_name>[] =
-            #         (name, value),                               {
-            #         (name, value),                      ->           { .<name> = <value>, .<name> = <value>, .<name> = <value> },
-            #         (name, value),                                   { .<name> = <value>, .<name> = <value>, .<name> = <value> },
-            #     ) for x in xs))                                      { .<name> = <value>, .<name> = <value>, .<name> = <value> },
-            #                                                      };
+            #     Meta.lut((<table_type>, <table_name>), ((        static const <table_type> <table_name>[] =
+            #         (name, value),                                   {
+            #         (name, value),                          ->           { .<name> = <value>, .<name> = <value>, .<name> = <value> },
+            #         (name, value),                                       { .<name> = <value>, .<name> = <value>, .<name> = <value> },
+            #     ) for x in xs))                                          { .<name> = <value>, .<name> = <value>, .<name> = <value> },
+            #                                                          };
 
             case (table_type, table_name):
 

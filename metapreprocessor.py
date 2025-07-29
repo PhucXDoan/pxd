@@ -170,60 +170,177 @@ class Meta:
             self.line()
 
 
-    def enums(self, *args): return self.__enums(self, *args)
+    ################################################################################################################################
+    #
+    # Helper routine to make enumerations.
+    #
+    # Example:
+    # >
+    # >    Meta.enums('Card', 'u32', ('jack', 'queen', 'king', 'ace'))
+    # >
+    #
+    # Example:
+    # >
+    # >    with Meta.enums('Card', 'u32') as members:
+    # >        for card in ('jack', 'queen', 'king', 'ace'):
+    # >            members += [card]
+    # >
+    #
+    # Output:
+    # >
+    # >    enum Card : u32
+    # >    {
+    # >        Card_jack,
+    # >        Card_queen,
+    # >        Card_king,
+    # >        Card_ace,
+    # >    };
+    # >    static constexpr u32 Card_COUNT = 4;
+    # >
+    #
+
+
+
+    # The actual routine to create the enumeration is a class so
+    # that `Meta.enums` can be used as a context-manager if needed.
+
+    def enums(self, *args, **kwargs):
+        return self.__enums(self, *args, **kwargs)
+
     class __enums:
 
-        def __init__(self, meta, enum_name, underlying_type, members = None, count = True):
 
-            self.meta            = meta
-            self.enum_name       = enum_name
-            self.underlying_type = underlying_type
-            self.members         = members
-            self.count           = count
+
+        # Whether or not we determine if `Meta.enums` is being used as a context-manager is if the list of members is provided.
+
+        def __init__(self, meta, enum_name, enum_type, members = None, count = 'constexpr'):
+
+            self.meta      = meta
+            self.enum_name = enum_name
+            self.enum_type = enum_type
+            self.members   = members
+            self.count     = count
 
             if self.members is not None:
-                self.__exit__() # The list of members are already provided.
+                self.__exit__()
 
 
-        def __enter__(self): # The user provides the list of members in a `with` context.
+
+        # By using a context-manager, the user can create the list of enumeration members with more complicated logic.
+
+        def __enter__(self):
 
             if self.members is not None:
                 raise ValueError('Cannot use Meta.enums in a with-context when members are already provided: {self.members}.')
 
             self.members = []
+
             return self.members
 
 
+
+        # Here we generate the output whether or not a context-manager was actually used.
+
         def __exit__(self, *dont_care_about_exceptions):
+
+
+
+            # By providing "enum_type", we can specify the width of the enumeration members;
+            # this, however, is only supported in C++ and C23.
+            # e.g: Meta.enums('Planet', 'u32', ...)   ->   enum Planet : u32 { ... }
+            # e.g: Meta.enums('Planet', None , ...)   ->   enum Planet       { ... }
+
+            if self.enum_type is None:
+                enum_type_suffix = ''
+            else:
+                enum_type_suffix = f' : {self.enum_type}'
+
+
+
+            # Format the list of members, some of which may be a name-value pair.
+            # e.g:
+            # >                                       enums Card : u32
+            # >    Meta.enums('Card', 'u32', (        {
+            # >        ('jack' , 1),                      Card_jack  = 1,
+            # >        ('queen', 2),                      Card_queen = 2,
+            # >        ('king'    ),             ->       Card_king,
+            # >        ('ace'     ),                      Card_ace,
+            # >        ('null' , 0),                      Card_null  = 0,
+            # >    ))                                 };
+            # >
 
             self.members = list(self.members)
 
-            if self.underlying_type is None:
-                enum_type = ''
-            else:
-                enum_type = f' : {self.underlying_type}'
+            for member_i, member in enumerate(self.members):
 
-            with self.meta.enter(f'enum {self.enum_name}{enum_type}'):
-                for member, ljust_member_name in zip(self.members, ljusts(
-                    f'{self.enum_name}_{member[0] if member[0] is not None else 'none'}' if isinstance(member, tuple) else
-                    f'{self.enum_name}_{member    if member    is not None else 'none'},'
-                    for member in self.members
-                )):
+                match member:
+                    case (name, value) : value = repr_in_c(value)
+                    case  name         : value = ...
+
+                self.members[member_i] = (f'{self.enum_name}_{repr_in_c(name)}', value)
+
+
+
+            # Output the enumeration members with alignment.
+
+            with self.meta.enter(f'enum {self.enum_name}{enum_type_suffix}'):
+
+                for member, ljust_name in zip(self.members, ljusts(name for name, value in self.members)):
+
                     match member:
-                        case (name, value) : self.meta.line(f'{ljust_member_name} = {value},')
-                        case  name         : self.meta.line(ljust_member_name)
+                        case (name, builtins.Ellipsis) : self.meta.line(f'{name},'                )
+                        case (name, value            ) : self.meta.line(f'{ljust_name} = {value},')
 
-            # Provide the amount of members; it's its own enumeration so it won't have
-            # to be explicitly handled in switch statements. Using a #define would also
-            # work, but this could result in a name conflict; making the count be its own
-            # enumeration prevents this collision since it's definition is scoped to where
-            # it is defined.
-            if self.count:
-                # TODO: self.meta.line(f'enum{enum_type} {{ {self.enum_name}_COUNT = {len(self.members)} }};')
-                # TODO: Using `constexpr` is better here so the comparison `an_enum_member < the_enum_COUNT` can be done
-                # without any warnings. Support for `constexpr` might be less than the solution above however,
-                # so it'll be good to be able to switch between the two.
-                self.meta.line(f'constexpr {self.underlying_type} {self.enum_name}_COUNT = {len(self.members)};')
+
+
+            # Provide the amount of enumeration members that were defined;
+            # this is useful for creating arrays and iterating with for-loops and such.
+
+            match self.count:
+
+
+
+                # Don't emit the count.
+
+                case None:
+                    pass
+
+
+
+                # Use a macro, but this will have the disadvantage of not being scoped and might result in a name conflict.
+                # Most of the time, enumerations are defined at the global level, so this wouldn't matter, but enumerations can
+                # also be declared within a function; if so, then another enumeration of the same name cannot be declared later
+                # or else there'll be multiple #defines with different values.
+
+                case 'define':
+                    self.meta.define(f'{self.enum_name}_COUNT', len(self.members))
+
+
+
+                # Use a separate, anonymous enumeration definition to make the count.
+                # Unlike "define", this will be scoped, so it won't suffer the same issue of name conflicts.
+                # However, the compiler could emit warnings if comparisons are made between the enumeration
+                # members and this member count, because they are from different enumeration groups.
+
+                case 'enum':
+                    self.meta.line(f'enum{enum_type_suffix} {{ {self.enum_name}_COUNT = {len(self.members)} }};')
+
+
+
+                # Use a constexpr declaration to declare the member count.
+                # Unlike "enum", the type of the constant is the same type as the underlying type of the enumeration,
+                # so the compiler shouldn't warn about comparisons between the two.
+                # This approach, however, relies on C23 or C++.
+
+                case 'constexpr':
+                    self.meta.line(f'static constexpr {self.enum_type} {self.enum_name}_COUNT = {len(self.members)};')
+
+
+
+                # Unknown member-count style.
+
+                case _:
+                    assert False
 
 
 
@@ -510,12 +627,14 @@ class Meta:
 
         # If the first element of every entry's field-list is a non-tuple, then we assume that is the index of the entry.
         # e.g:
-        #     Meta.lut(<table_name>, ((             static const struct { <type> <name>; <type> <name>; <type> <name>; } <table_name>[] =
-        #         <index>,                              {
-        #         (<type>, <name>, <value>),   ->           [<index>] = { .<name> = <value>, .<name> = <value>, .<name> = <value> },
-        #         (<type>, <name>, <value>),                [<index>] = { .<name> = <value>, .<name> = <value>, .<name> = <value> },
-        #         (<type>, <name>, <value>),                [<index>] = { .<name> = <value>, .<name> = <value>, .<name> = <value> },
-        #     ) for x in xs))                           };
+        # >
+        # >    Meta.lut(<table_name>, ((             static const struct { <type> <name>; <type> <name>; <type> <name>; } <table_name>[] =
+        # >        <index>,                              {
+        # >        (<type>, <name>, <value>),   ->           [<index>] = { .<name> = <value>, .<name> = <value>, .<name> = <value> },
+        # >        (<type>, <name>, <value>),                [<index>] = { .<name> = <value>, .<name> = <value>, .<name> = <value> },
+        # >        (<type>, <name>, <value>),                [<index>] = { .<name> = <value>, .<name> = <value>, .<name> = <value> },
+        # >    ) for x in xs))                           };
+        # >
 
         if all(entry and not isinstance(entry[0], tuple) for entry in entries):
             indices = [repr_in_c(index) for index, *fields in entries]
@@ -525,12 +644,14 @@ class Meta:
 
         # The entries of the look-up table will be defined in sequential order with no explicit indices.
         # e.g:
-        #     Meta.lut(<table_name>, ((             static const struct { <type> <name>; <type> <name>; <type> <name>; } <table_name>[] =
-        #         (<type>, <name>, <value>),            {
-        #         (<type>, <name>, <value>),   ->           { .<name> = <value>, .<name> = <value>, .<name> = <value> },
-        #         (<type>, <name>, <value>),                { .<name> = <value>, .<name> = <value>, .<name> = <value> },
-        #     ) for x in xs))                               { .<name> = <value>, .<name> = <value>, .<name> = <value> },
-        #                                               };
+        # >
+        # >    Meta.lut(<table_name>, ((             static const struct { <type> <name>; <type> <name>; <type> <name>; } <table_name>[] =
+        # >        (<type>, <name>, <value>),            {
+        # >        (<type>, <name>, <value>),   ->           { .<name> = <value>, .<name> = <value>, .<name> = <value> },
+        # >        (<type>, <name>, <value>),                { .<name> = <value>, .<name> = <value>, .<name> = <value> },
+        # >    ) for x in xs))                               { .<name> = <value>, .<name> = <value>, .<name> = <value> },
+        # >                                             };
+        # >
 
         else:
             indices = None
@@ -545,12 +666,14 @@ class Meta:
 
             # If the type for the look-up table's entries is given, then each field shouldn't have to specify the type.
             # e.g:
-            #     Meta.lut((<table_type>, <table_name>), ((        static const <table_type> <table_name>[] =
-            #         (name, value),                                   {
-            #         (name, value),                          ->           { .<name> = <value>, .<name> = <value>, .<name> = <value> },
-            #         (name, value),                                       { .<name> = <value>, .<name> = <value>, .<name> = <value> },
-            #     ) for x in xs))                                          { .<name> = <value>, .<name> = <value>, .<name> = <value> },
-            #                                                          };
+            # >
+            # >    Meta.lut((<table_type>, <table_name>), ((        static const <table_type> <table_name>[] =
+            # >        (name, value),                                   {
+            # >        (name, value),                          ->           { .<name> = <value>, .<name> = <value>, .<name> = <value> },
+            # >        (name, value),                                       { .<name> = <value>, .<name> = <value>, .<name> = <value> },
+            # >    ) for x in xs))                                          { .<name> = <value>, .<name> = <value>, .<name> = <value> },
+            # >                                                         };
+            # >
 
             case (table_type, table_name):
 
@@ -568,12 +691,14 @@ class Meta:
 
             # If the type for the look-up table's entries is not given, then we'll create the type based on the type of each field.
             # e.g:
-            #     Meta.lut(<table_name>, ((             static const struct { <type> <name>; <type> <name>; <type> <name>; } <table_name>[] =
-            #         (<type>, <name>, <value>),            {
-            #         (<type>, <name>, <value>),   ->           { .<name> = <value>, .<name> = <value>, .<name> = <value> },
-            #         (<type>, <name>, <value>),                { .<name> = <value>, .<name> = <value>, .<name> = <value> },
-            #     ) for x in xs))                               { .<name> = <value>, .<name> = <value>, .<name> = <value> },
-            #                                               };
+            # >
+            # >    Meta.lut(<table_name>, ((             static const struct { <type> <name>; <type> <name>; <type> <name>; } <table_name>[] =
+            # >        (<type>, <name>, <value>),            {
+            # >        (<type>, <name>, <value>),   ->           { .<name> = <value>, .<name> = <value>, .<name> = <value> },
+            # >        (<type>, <name>, <value>),                { .<name> = <value>, .<name> = <value>, .<name> = <value> },
+            # >    ) for x in xs))                               { .<name> = <value>, .<name> = <value>, .<name> = <value> },
+            # >                                              };
+            # >
 
             case table_name:
 

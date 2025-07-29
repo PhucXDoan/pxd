@@ -1006,20 +1006,46 @@ def do(*,
 
     ################################################################################################################################
     #
-    # If no exports/imports are explicitly given, then the meta-directive implicitly imports everything.
+    # Perform implicit importings.
     # >
     # >    #meta                     -> No exports; import everything.
     # >    #meta A, B, C             -> Export A, B, and C; no explicit imports.
-    # >    #meta A, B, C :           -> Export A, B, and C and have every other meta-directive implicitly import A, B, C.
+    # >    #meta A, B, C :           -> Export A, B, and C and have every other meta-directive implicitly globally import A, B, C.
     # >    #meta A, B, C : D, E, F   -> Export A, B, and C; explicitly import D, E, and F.
     # >    #meta         : D, E, F   -> Export nothing; explicitly import D, E, and F.
     # >    #meta         :           -> No exports; no imports at all.
     # >
     #
 
+
+
+    # If no exports/imports are explicitly given, then the meta-directive implicitly imports everything.
+
     for meta_directive in meta_directives:
         if meta_directive.exports == OrdSet() and meta_directive.imports is None:
             meta_directive.imports = all_exports
+
+
+
+    # If the meta-directive explicitly imports nothing, then its exports will
+    # globally be implicitly imported into every other meta-directive.
+
+    implicit_global_import = OrdSet(
+        symbol
+        for meta_directive in meta_directives
+        if meta_directive.imports == OrdSet()
+        for symbol in meta_directive.exports
+    )
+
+    for meta_directive in meta_directives:
+
+        if meta_directive.imports == OrdSet():
+            continue
+
+        if meta_directive.imports is None:
+            meta_directive.imports = OrdSet()
+
+        meta_directive.imports |= implicit_global_import
 
 
 
@@ -1030,10 +1056,9 @@ def do(*,
 
     # Meta-directives with empty imports are always done first,
     # because their exports will be implicitly imported to all the other meta-directives.
-    remaining_meta_directives = [d for d in meta_directives if d.imports != {}]
-    meta_directives           = [d for d in meta_directives if d.imports == {}]
-    implicit_symbols          = OrdSet(symbol for meta_directive in meta_directives for symbol in meta_directive.exports)
-    current_symbols           = OrdSet(implicit_symbols)
+    remaining_meta_directives = meta_directives[:]
+    meta_directives           = []
+    current_symbols           = OrdSet()
 
     while remaining_meta_directives:
 
@@ -1069,10 +1094,7 @@ def do(*,
             include_file_path             = f"r'{meta_directive.include_directive_file_path}'"
             include_directive_line_number =      meta_directive.meta_header_line_number - 1
 
-        if meta_directive.imports == OrdSet():
-            imports = {} # The meta-directive explicitly has no imports.
-        else:
-            imports = (meta_directive.imports or OrdSet()) | implicit_symbols # The meta-directive lists its imports or have them be implicit given.
+        imports = meta_directive.imports
 
         exports = ', '.join(map(repr, meta_directive.exports))
         imports = ', '.join(map(repr, imports        ))

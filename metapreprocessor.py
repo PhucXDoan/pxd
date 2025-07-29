@@ -76,7 +76,7 @@ class Meta:
 
                 self.define(
                     f'{macro}({', '.join(all_params)})',
-                    f'_{macro}__##{'##'.join(map(str, overloading_params))}{nonoverloading_params}'
+                    f'MACRO_OVERLOAD__{macro}__##{'##'.join(map(str, overloading_params))}{nonoverloading_params}'
                 )
 
         # Put back the rest of the code that was generated.
@@ -231,6 +231,18 @@ class Meta:
     #
     # Helper routine to create C macro definitions.
     #
+    # Example:
+    # >
+    # >    Meta.define('PI', 3.1415)
+    # >
+    # >    Meta.define('MAX', ('X', 'Y'), '((X) < (Y) ? (Y) : (X))')
+    # >
+    # >    Meta.define('WORDIFY', ('NUMBER'), 'ZERO' , NUMBER = 0)
+    # >    Meta.define('WORDIFY', ('NUMBER'), 'ONE'  , NUMBER = 1)
+    # >    Meta.define('WORDIFY', ('NUMBER'), 'TWO'  , NUMBER = 2)
+    # >    Meta.define('WORDIFY', ('NUMBER'), 'THREE', NUMBER = 3)
+    # >
+    #
 
     def define(self, *args, do_while = False, **overloading):
 
@@ -274,88 +286,111 @@ class Meta:
 
 
 
+        # Macros can be "overloaded" by doing concatenation of a preprocessor-time value.
+        # >
+        # >    #define FOOBAR_ABC     3.14
+        # >    #define FOOBAR_IJK     1000
+        # >    #define FOOBAR_XYZ     "Hello"
+        # >    #define FOOBAR(SUFFIX) FOOBAR_##SUFFIX
+        # >
+        # >    FOOBAR(IJK)   ->   FOOBAR_IJK   ->   1000
+        # >
+
         if overloading:
 
 
 
             # Some coherency checks.
 
-            if expansion is None:
-                raise ValueError('When overloading a macro ("{name}"), a tuple of parameter names and a string for the expansion must be given.')
+            if differences := OrdSet(overloading) - OrdSet(parameters):
+                raise ValueError(f'Overloading a macro ("{name}") on the parameter "{differences[0]}", but it\'s not in the parameter-list: {parameters}.')
 
-            for key in overloading:
-                if key not in parameters:
-                    raise ValueError(f'Overloading a macro ("{name}") on the parameter "{key}", but it\'s not in the parameter-list: {parameters}.')
+            if name in self.overloads and self.overloads[name] != (parameters, tuple(overloading.keys())):
+                raise ValueError(f'Cannot overload a macro ("{name}") with differing overloaded parameters.')
 
 
 
             # Make note of the fact that there'll be multiple instances of the "same macro".
 
-            if name in self.overloads:
-                if self.overloads[name] != (parameters, list(overloading.keys())):
-                    raise ValueError(f'Cannot overload a macro ("{name}") with differing overloaded parameters.')
-            else:
-                self.overloads[name] = (parameters, list(overloading.keys()))
+            if name not in self.overloads:
+                self.overloads[name] = (parameters, tuple(overloading.keys()))
 
 
 
-            # Define the macro instance.
+            # The name and parameters of this single macro instance itself.
 
-            self.define(
-                f'_{name}__{'__'.join(map(str, overloading.values()))}',
-                [param for param in parameters if param not in overloading] or None,
-                expansion,
-            )
+            name       = f'MACRO_OVERLOAD__{name}__{'__'.join(map(str, overloading.values()))}'
+            parameters = list(OrdSet(parameters) - OrdSet(overloading)) or None
 
+
+
+        # Determine the prototype of the macro.
+
+        if parameters is None:
+            prototype = f'{name}'
         else:
+            prototype = f'{name}({', '.join(parameters)})'
 
 
 
-            # Determine if the caller provided parameters.
+        # Format the macro's expansion.
 
-            expansion = deindent(repr_in_c(expansion))
-
-            if parameters is None:
-                macro = f'{name}'
-            else:
-                macro = f'{name}({', '.join(parameters)})'
+        expansion = deindent(repr_in_c(expansion))
 
 
 
-            # Generate macro that spans multiple lines.
+        # Output macro that will multiple lines.
 
-            if '\n' in expansion:
+        if '\n' in expansion:
 
-                with self.enter(f'#define {macro}'):
-
-
-
-                    # Generate multi-lined macro wrapped in do-while.
-
-                    if do_while:
-                        with self.enter('do', '{', '}\nwhile (false)'):
-                            self.line(expansion)
+            with self.enter(f'#define {prototype}'):
 
 
 
-                    # Generate unwrapped multi-lined macro.
+                # Generate multi-lined macro wrapped in do-while.
+                # e.g:
+                # >
+                # >    #define <prototype> \
+                # >        do \
+                # >        { \
+                # >            <expansion> \
+                # >            <expansion> \
+                # >            <expansion> \
+                # >        } \
+                # >        while (false) \
+                # >
 
-                    else:
+                if do_while:
+                    with self.enter('do', '{', '}\nwhile (false)'):
                         self.line(expansion)
 
 
 
-            # Generate single-line macro wrapped in do-while.
+                # Generate unwrapped multi-lined macro.
+                # e.g:
+                # >
+                # >    #define <prototype> \
+                # >        <expansion> \
+                # >        <expansion> \
+                # >        <expansion> \
+                # >
 
-            elif do_while:
-                self.line(f'#define {macro} do {{ {expansion} }} while (false)')
+                else:
+                    self.line(expansion)
 
 
 
-            # Generate unwrapped single-line macro.
+        # Just output a single-line macro wrapped in do-while.
 
-            else:
-                self.line(f'#define {macro} {expansion}')
+        elif do_while:
+            self.line(f'#define {prototype} do {{ {expansion} }} while (false)')
+
+
+
+        # Just output an unwrapped single-line macro.
+
+        else:
+            self.line(f'#define {prototype} {expansion}')
 
 
 

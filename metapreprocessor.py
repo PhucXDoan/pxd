@@ -360,6 +360,18 @@ class Meta:
     # >    Meta.define('WORDIFY', ('NUMBER'), 'THREE', NUMBER = 3)
     # >
     #
+    # Output:
+    # >
+    # >    #define PI 3.1415
+    # >
+    # >    #define MAX(X, Y) ((X) < (Y) ? (Y) : (X))
+    # >
+    # >    #define WORDIFY(NUMBER) MACRO_OVERLOAD__WORDIFY__##NUMBER
+    # >    #define MACRO_OVERLOAD__WORDIFY__0 ZERO
+    # >    #define MACRO_OVERLOAD__WORDIFY__1 ONE
+    # >    #define MACRO_OVERLOAD__WORDIFY__2 TWO
+    # >    #define MACRO_OVERLOAD__WORDIFY__3 THREE
+    #
 
     def define(self, *args, do_while = False, **overloading):
 

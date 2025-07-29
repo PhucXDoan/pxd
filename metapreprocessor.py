@@ -1,6 +1,6 @@
 import pathlib, types, contextlib, re, traceback, builtins, sys, copy
 from ..pxd.log   import log
-from ..pxd.utils import ljusts, root, deindent, repr_in_c, mk_dict, find_dupe, Record, OrdSet, ErrorLift
+from ..pxd.utils import ljusts, root, deindent, repr_in_c, mk_dict, find_dupe, coalesce, Record, OrdSet, ErrorLift
 
 # TODO Warn on unused symbols.
 
@@ -839,14 +839,6 @@ def do(*,
 
 
             # We then parse and validate the meta-header.
-            # >
-            # >    #meta                     -> No exports; import everything.
-            # >    #meta A, B, C             -> Export A, B, and C; no explicit imports.
-            # >    #meta A, B, C :           -> Export A, B, and C and have every other meta-directive implicitly import A, B, C.
-            # >    #meta A, B, C : D, E, F   -> Export A, B, and C; explicitly import D, E, and F.
-            # >    #meta         : D, E, F   -> Export nothing; explicitly import D, E, and F.
-            # >    #meta         :           -> No exports; no imports at all.
-            # >
 
             match meta_header_line.split(':'):
                 case (exports,        ) : ports = [exports, None   ]
@@ -962,48 +954,76 @@ def do(*,
 
     ################################################################################################################################
     #
-    # Process the meta-directives' parameters.
+    # Check consistency of exports and imports.
     #
 
-    include_collisions = {}
+
+
+    if dupes := coalesce((
+        (meta_directive.include_directive_file_path, meta_directive)
+        for meta_directive in meta_directives
+        if meta_directive.include_directive_file_path is not None
+    ), find_dupes = True):
+
+        raise MetaError(
+            f'# Meta-directives with the same output file path of "{dupes[0].include_directive_file_path}": ' \
+            f'[{dupes[0].source_file_path}:{dupes[0].meta_header_line_number - 1}] and ' \
+            f'[{dupes[1].source_file_path}:{dupes[1].meta_header_line_number - 1}].'
+        )
+
+
+
+    if dupes := coalesce((
+        (symbol, meta_directive)
+        for meta_directive in meta_directives
+        for symbol in meta_directive.exports
+    ), find_dupes = True):
+
+        raise MetaError(f'# Multiple meta-directives export the symbol "{symbol}".')
+
+
+
+    all_exports = OrdSet(
+        export
+        for meta_directive in meta_directives
+        for export         in meta_directive.exports
+    )
+
     for meta_directive in meta_directives:
-        if meta_directive.include_directive_file_path is not None:
-            if (collision := include_collisions.get(meta_directive.include_directive_file_path, None)) is None:
-                include_collisions[meta_directive.include_directive_file_path] = meta_directive
-            else:
-                raise MetaError( # TODO Improve.
-                    f'# Meta-directives with the same output file path of "{meta_directive.include_directive_file_path}": ' \
-                    f'[{meta_directive.source_file_path}:{meta_directive.meta_header_line_number - 1}] and ' \
-                    f'[{collision     .source_file_path}:{collision     .header_line_number - 1}].'
-                )
 
-    all_exports = {}
+        if meta_directive.imports is None:
+            continue
 
-    for meta_directive in meta_directives:
-        for symbol in meta_directive.exports:
+        for symbol in meta_directive.imports:
 
-            if symbol in all_exports:
-                raise MetaError(f'# Multiple meta-directives export the symbol "{symbol}".') # TODO Better error message.
+            if symbol in meta_directive.exports:
+                raise MetaError(f'# Meta-directives exports "{symbol}" but also imports it.')
 
-            all_exports[symbol] = meta_directive
+            if symbol not in all_exports:
+                raise MetaError(f'# Meta-directives imports "{symbol}" but no meta-directive exports that.')
 
-    for meta_directive in meta_directives:
-        if meta_directive.imports is not None:
-            for symbol in meta_directive.imports:
 
-                if symbol not in all_exports:
-                    raise MetaError(f'# Meta-directives imports "{symbol}" but no meta-directive exports that.') # TODO Better error message.
 
-                if all_exports[symbol] == meta_directive:
-                    raise MetaError(f'# Meta-directives exports "{symbol}" but also imports it.') # TODO Better error message.
+    ################################################################################################################################
+    #
+    # If no exports/imports are explicitly given, then the meta-directive implicitly imports everything.
+    # >
+    # >    #meta                     -> No exports; import everything.
+    # >    #meta A, B, C             -> Export A, B, and C; no explicit imports.
+    # >    #meta A, B, C :           -> Export A, B, and C and have every other meta-directive implicitly import A, B, C.
+    # >    #meta A, B, C : D, E, F   -> Export A, B, and C; explicitly import D, E, and F.
+    # >    #meta         : D, E, F   -> Export nothing; explicitly import D, E, and F.
+    # >    #meta         :           -> No exports; no imports at all.
+    # >
+    #
 
     for meta_directive in meta_directives:
+        if meta_directive.exports == OrdSet() and meta_directive.imports is None:
+            meta_directive.imports = all_exports
 
-        # If no exports/imports are explicitly given,
-        # then the meta-directive implicitly imports everything.
-        if not meta_directive.exports and not meta_directive.imports:
-            meta_directive.imports = OrdSet(all_exports.keys())
 
+
+    ################################################################################################################################
     #
     # Sort the #meta directives.
     #
@@ -1163,11 +1183,11 @@ def do(*,
                         err_dir = next(
                             dir
                             for dir in meta_directives
-                            if 0 <= (line_number - dir.meta_py_line_number) <= len(dir.lines)
+                            if 0 <= (line_number - dir.meta_py_line_number) <= len(dir.body_lines)
                         )
 
                         file_path   = err_dir.source_file_path
-                        line_number = err_dir.header_line_number + (line_number - err_dir.meta_py_line_number) + 1
+                        line_number = err_dir.meta_header_line_number + (line_number - err_dir.meta_py_line_number) + 1
 
                     stacks += [types.SimpleNamespace(
                         file_path   = root(file_path),

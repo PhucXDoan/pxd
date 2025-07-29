@@ -7,20 +7,29 @@ def round_up(x, n = 1):
 
 ################################################################################################################################
 
-def coalesce(xs, func = None):
+def coalesce(xs, function = None, find_dupes = False):
 
     inverse = collections.defaultdict(lambda: [])
 
     for x in xs:
 
-        if func is None:
+        if function is None:
             key, value = x
         else:
-            key, value = func(x), x
+            key, value = function(x), x
 
         inverse[key] += [value]
 
-    return { key : tuple(values) for key, values in inverse.items() }
+    result = { key : tuple(values) for key, values in inverse.items() }
+
+    if find_dupes:
+        result = next((
+            dupes
+            for dupes in result.values()
+            if len(dupes) >= 2
+        ), None)
+
+    return result
 
 ################################################################################################################################
 

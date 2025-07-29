@@ -21,12 +21,20 @@ class MetaError(Exception):
     def __str__(self):
         return self.diagnostic
 
-################################################################ Meta ################################################################
+################################################################################################################################
+#
+# The `Meta` class is the main toolbox used in Meta-directives
+# to generate nice looking C code in a low-friction way.
+#
+
 
 class Meta:
 
+
+
     def __init__(self):
         self.include_file_path = None
+
 
 
     def _start(self, include_file_path, source_file_path, include_directive_line_number):
@@ -42,7 +50,8 @@ class Meta:
 
     ################################################################################################################################
     #
-    # Protect against accidentally using stuff related to code generation when the meta-directive has no file to output it to.
+    # Protect against accidentally using stuff related to code generation
+    # when the meta-directive has no file to output it to.
     #
 
     def _codegen(function):
@@ -65,41 +74,81 @@ class Meta:
 
     def _end(self):
 
+
+
         # No generated code if there's no #include directive.
+
         if self.include_file_path is None:
             return
 
+
+
         # We need to insert some stuff at the beginning of the file...
+
         generated   = self.output
         self.output = ''
 
+
+
         # Indicate origin of the meta-directive in the generated output.
+
         self.line(f'// [{self.source_file_path}:{self.include_directive_line_number}].')
 
-        # Put any overloaded macros first.
+
+
+        # Create the master macro for any overloaded macros.
+        # This has to be done first because the overloaded macros could be used later in the generated file after they're defined,
+        # and if we don't have the master macro to have the overloaded macros be invoked, errors will happen!
+        # We could also make the master macro when we're making the first overloaded macro instance,
+        # but this master macro could be inside of a #if, making it potentially unexpectedly undefined in certain situations.
+
         if self.overloads:
 
-            for macro, (all_params, overloading_params) in self.overloads.items():
+            for macro, (parameters, overloading) in self.overloads.items():
 
-                nonoverloading_params = [param for param in all_params if param not in overloading_params]
 
-                if nonoverloading_params:
-                    nonoverloading_params = f'({', '.join(nonoverloading_params)})'
-                else:
-                    nonoverloading_params = ''
 
-                self.define(
-                    f'{macro}({', '.join(all_params)})',
-                    f'MACRO_OVERLOAD__{macro}__##{'##'.join(map(str, overloading_params))}{nonoverloading_params}'
-                )
+                # The overloaded macro instance only has an argument-list if needed.
+                #
+                # e.g:
+                # >                                                              #define SAY(NAME) MACRO_OVERLOAD__SAY__##NAME
+                # >    Meta.define('SAY', ('NAME'), 'meow', NAME = 'CAT')        #define MACRO_OVERLOAD__SAY__CAT meow
+                # >    Meta.define('SAY', ('NAME'), 'bark', NAME = 'DOG')   ->   #define MACRO_OVERLOAD__SAY__DOG bark
+                # >    Meta.define('SAY', ('NAME'), 'bzzz', NAME = 'BUG')        #define MACRO_OVERLOAD__SAY__BUG bzzz
+                # >
+                #
+                # e.g:
+                # >                                                                            #define SAY(NAME, FUNC) MACRO_OVERLOAD__SAY__##NAME(FUNC)
+                # >    Meta.define('SAY', ('NAME', 'FUNC'), 'FUNC(MEOW)', NAME = 'CAT')        #define MACRO_OVERLOAD__SAY__CAT(FUNC) FUNC(MEOW)
+                # >    Meta.define('SAY', ('NAME', 'FUNC'), 'FUNC(BARK)', NAME = 'DOG')   ->   #define MACRO_OVERLOAD__SAY__DOG(FUNC) FUNC(BARK)
+                # >    Meta.define('SAY', ('NAME', 'FUNC'), '     BZZZ ', NAME = 'BUG')        #define MACRO_OVERLOAD__SAY__BUG(FUNC) BZZZ
+                # >
+                #
+
+                argument_list = OrdSet(parameters) - OrdSet(overloading)
+
+                if argument_list : argument_list = f'({', '.join(argument_list)})'
+                else             : argument_list = ''
+
+
+
+                # Output the master macro.
+
+                self.define(f'{macro}({', '.join(parameters)})', f'MACRO_OVERLOAD__{macro}__##{'##'.join(overloading)}{argument_list}')
+
+
 
         # Put back the rest of the code that was generated.
+
         if generated:
             self.line(generated)
 
+
+
         # Spit out the generated code.
-        pathlib.Path(self.include_file_path).parent.mkdir(parents=True, exist_ok=True)
-        open(self.include_file_path, 'w').write(self.output)
+
+        pathlib.Path(self.include_file_path).parent.mkdir(parents = True, exist_ok = True)
+        pathlib.Path(self.include_file_path).write_text(self.output)
 
 
 
@@ -525,6 +574,12 @@ class Meta:
         # >
 
         if overloading:
+
+
+
+            # To C values.
+
+            overloading = { key : repr_in_c(value) for key, value in overloading.items() }
 
 
 

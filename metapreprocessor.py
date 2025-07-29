@@ -88,27 +88,73 @@ class Meta:
         open(self.include_file_path, 'w').write(self.output)
 
 
-    def line(self, *inputs): # TODO More consistent trimming of newlines.
 
-        if not inputs:
-            inputs = ['\n\n\n']
+    ################################################################################################################################
+    #
+    # Helper routine to output lines.
+    #
+    # Example:
+    # >
+    # >    Meta.line('''
+    # >        printf("%d", 0);
+    # >        printf("%d", 1);
+    # >        printf("%d", 2);
+    # >        printf("%d", 3);
+    # >   ''')
+    # >
+    # >    Meta.line(
+    # >        'printf("%d", 0);',
+    # >        'printf("%d", 1);',
+    # >        'printf("%d", 2);',
+    # >        'printf("%d", 3);',
+    # >    )
+    # >
+    # >    Meta.line(f'printf("%d", {i});' for i in range(4))
+    # >
+    #
 
-        for input in inputs:
+    def line(self, *args):
 
-            strings = []
+        if not args: # Create single empty line for `Meta.line()`.
+            args = ['''
 
-            match input:
-                case types.GeneratorType() : strings = list(input)
-                case list()                : strings = input
-                case str()                 : strings = [input]
-                case _                     : raise TypeError('Input type not supported.')
+            ''']
+
+        for arg in args:
+
+            match arg:
+                case str() : strings = [arg]
+                case _     : strings = list(arg)
 
             for string in strings:
 
-                deindented_string = deindent(string)
+                for line in deindent(string).splitlines():
 
-                for line in deindented_string.splitlines():
-                    self.output += (((' ' * 4 * self.indent) + line) + (' \\' if self.within_macro else '')).rstrip() + '\n'
+
+
+                    # Reindent.
+
+                    line = ' ' * 4 * self.indent + line
+
+
+
+                    # Escape newlines for multi-lined macros.
+
+                    if self.within_macro:
+                        line += '\\'
+
+
+
+                    # No trailing spaces.
+
+                    line = line.rstrip()
+
+
+
+                    # Next line!
+
+                    self.output += line + '\n'
+
 
 
     ################################################################################################################################
@@ -1085,7 +1131,7 @@ def do(*,
                             line   = line.rstrip()
                             lines += [line]
 
-                        lines = deindent(lines, remove_leading_newline = False, single_line_comment = '#')
+                        lines = deindent('\n'.join(lines), multilined_string_literal = False, single_line_comment = '#').splitlines()
 
                         meta_directives += [types.SimpleNamespace(
                             source_file_path   = source_file_path,

@@ -26,28 +26,42 @@ class MetaError(Exception):
 class Meta:
 
     def __init__(self):
-        self.__dict__['include_file_path'] = None
+        self.include_file_path = None
 
 
     def _start(self, include_file_path, source_file_path, include_directive_line_number):
-        self.__dict__ |= {
-            'include_file_path'              : include_file_path,
-            'source_file_path'               : source_file_path,
-            'include_directive_line_number'  : include_directive_line_number,
-            'output'                         : '',
-            'indent'                         : 0,
-            'within_macro'                   : False,
-            'overloads'                      : {},
-        }
+        self.include_file_path             = include_file_path
+        self.source_file_path              = source_file_path
+        self.include_directive_line_number = include_directive_line_number
+        self.output                        = ''
+        self.indent                        = 0
+        self.within_macro                  = False
+        self.overloads                     = {}
 
 
-    def __setattr__(self, key, value):
 
-        if self.__dict__['include_file_path'] is None and key in ('output', 'indent', 'within_macro', 'overloads'):
-            raise MetaError(ErrorLift(f'The meta-directive needs to have an include-directive to use Meta.'))
+    ################################################################################################################################
+    #
+    # Protect against accidentally using stuff related to code generation when the meta-directive has no file to output it to.
+    #
 
-        self.__dict__[key] = value
+    def _codegen(function):
 
+        def wrapper(self, *args, **kwargs):
+
+            if self.include_file_path is None:
+                raise MetaError('Meta used in a meta-directive that has no associated include file path.')
+
+            return function(self, *args, **kwargs)
+
+        return wrapper
+
+
+
+    ################################################################################################################################
+    #
+    # Routine that gets invoked at the end of every meta-directive.
+    #
 
     def _end(self):
 
@@ -113,6 +127,7 @@ class Meta:
     # >
     #
 
+    @_codegen
     def line(self, *args):
 
         if not args: # Create single empty line for `Meta.line()`.
@@ -191,6 +206,7 @@ class Meta:
     # >
     #
 
+    @_codegen
     @contextlib.contextmanager
     def enter(self, header = None, opening = None, closing = None, *, indented = None):
 
@@ -285,6 +301,7 @@ class Meta:
     # The actual routine to create the enumeration is a class so
     # that `Meta.enums` can be used as a context-manager if needed.
 
+    @_codegen
     def enums(self, *args, **kwargs):
         return self.__enums(self, *args, **kwargs)
 
@@ -454,6 +471,7 @@ class Meta:
     # >    #define MACRO_OVERLOAD__WORDIFY__3 THREE
     #
 
+    @_codegen
     def define(self, *args, do_while = False, **overloading):
 
 
@@ -631,6 +649,7 @@ class Meta:
     # >    #endif
     # >
 
+    @_codegen
     def ifs(self, items, style):
 
         items = tuple(items)
@@ -708,6 +727,7 @@ class Meta:
     # >        };
     # >
 
+    @_codegen
     def lut(self, table_name, entries):
 
 

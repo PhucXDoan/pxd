@@ -669,84 +669,172 @@ def MetaDirective(**info):
 
     return decorator
 
-################################################################ Meta-Preprocessor ################################################################
+
+
+################################################################################################################################
+#
+# The main routine to run the meta-preprocessor.
+#
 
 def do(*,
-    output_dir_path,
-    meta_py_file_path = None,
+    output_directory_path,
     source_file_paths,
-    callback = None,
+    meta_py_file_path = None,
+    callback          = None,
 ):
 
-    #
-    # Convert to pathlib.Path.
-    #
 
-    output_dir_path = pathlib.Path(output_dir_path)
+
+    # Convert to pathlib.Path.
+
+    output_directory_path = pathlib.Path(output_directory_path)
+    source_file_paths     = tuple(map(pathlib.Path, source_file_paths))
+
+
+
+    # By default, we'll make a `__meta__.py` file that has all
+    # of the meta-directive's code put together to be then executed.
 
     if meta_py_file_path is None:
-        meta_py_file_path = output_dir_path.joinpath('__meta__.py')
+        meta_py_file_path = pathlib.Path(output_directory_path, '__meta__.py')
 
-    source_file_paths = tuple(map(pathlib.Path, source_file_paths))
 
+
+    ################################################################################################################################
     #
-    # Get all of the #meta directives.
+    # Routine to parse and validate the meta-header.
+    # >
+    # >    #meta                     -> No exports; import everything.
+    # >    #meta A, B, C             -> Export A, B, and C; no explicit imports.
+    # >    #meta A, B, C :           -> Export A, B, and C and have every other meta-directive implicitly import A, B, C.
+    # >    #meta A, B, C : D, E, F   -> Export A, B, and C; explicitly import D, E, and F.
+    # >    #meta         : D, E, F   -> Export nothing; explicitly import D, E, and F.
+    # >    #meta         :           -> No exports; no imports at all.
+    # >
+
+    def get_ports(input):
+
+
+
+        # Split on the colon if there is one.
+
+        match input.split(':'):
+            case (exports,        ) : ports = [exports, None   ]
+            case (exports, imports) : ports = [exports, imports]
+            case _                  : assert False
+
+
+
+        # Process the LHS and RHS.
+
+        for port_i, port in enumerate(ports):
+
+            if port is None:
+                continue # Nothing to process here.
+
+
+
+            # Process each symbol.
+
+            symbols = []
+
+            for symbol in port.split(','):
+
+                symbol = symbol.strip()
+
+                if symbol == '':
+                    continue # We're fine with extra commas.
+
+                if not re.fullmatch('[a-zA-Z_][a-zA-Z0-9_]*', symbol):
+                    assert False, repr(symbol)
+
+                symbols += [symbol]
+
+
+
+            # We're find with duplicate symbols;
+            # doesn't really affect anything besides being redundant.
+
+            ports[port_i] = OrdSet(symbols)
+
+
+
+        return ports
+
+
+
+    ################################################################################################################################
     #
-
-    meta_directives = []
-
-    def get_ports(string, diagnostic_header): # TODO Instead of diagnostic_header, we should pass in the file path and line number range.
-
-        match string.split(':'):
-            case [exports         ] : ports = [exports, None   ]
-            case [exports, imports] : ports = [exports, imports]
-            case _                  : raise MetaError(f'{diagnostic_header} Too many colons for meta-directive!') # TODO Improve.
-
-        return [
-            OrdSet(
-                symbol.strip()
-                for symbol in port.split(',')
-                if symbol.strip() # We'll be fine if there's extra commas; just remove the empty strings.
-            ) if port is not None else None for port in ports
-        ]
+    # Routine to parse the C preprocessor's include-directive.
+    #
 
     def breakdown_include_directive_line(line):
 
-        #
-        # It's fine if the line is commented.
-        #
+
+
+        # It's fine if the line is commented;
+        # this would mean that the meta-directive would still generate code,
+        # but where the meta-directive is isn't where the code would be inserted at right now.
+        # e.g:
+        # >
+        # >    // #include "output.meta"
+        # >    /* #meta
+        # >        ...
+        # >    */
+        # >
 
         line = line.strip()
+
         if   line.startswith('//'): line = line.removeprefix('//')
         elif line.startswith('/*'): line = line.removeprefix('/*')
 
-        #
+
+
         # Check if the line has an include directive.
-        #
 
-        if not (line := line.strip()).startswith('#'):
-            return None
-        line = line.removeprefix('#')
+        line = line.strip()
 
-        if not (line := line.strip()).startswith('include'):
-            return None
-        line = line.removeprefix('include')
-
-        if not (line := line.strip()):
+        if not line.startswith(prefix := '#'):
             return None
 
-        if (end_quote := {
+        line = line.removeprefix(prefix)
+
+        line = line.strip()
+
+        if not line.startswith(prefix := 'include'):
+            return None
+
+        line = line.removeprefix(prefix)
+
+
+
+        # Look for the file path.
+
+        line = line.strip()
+
+        end_quote = {
             '<' : '>',
             '"' : '"',
-        }.get(line[0], None)) is None:
+        }.get(line[0], None) if line else None
+
+        if end_quote is None:
             return None
 
-        if (length := line[1:].find(end_quote)) == -1:
+        length = line[1:].find(end_quote)
+
+        if length == -1:
             return None
 
-        include_file_path = pathlib.Path(output_dir_path, line[1:][:length])
+        return pathlib.Path(output_directory_path, line[1:][:length])
 
-        return include_file_path
+
+
+    ################################################################################################################################
+    #
+    # Get all of the meta-directives.
+    #
+
+    meta_directives = []
 
     for source_file_path in source_file_paths:
 
@@ -790,7 +878,7 @@ def do(*,
                     tmp = tmp.removeprefix('#meta')
                     tmp = tmp.strip()
 
-                    exports, imports = get_ports(tmp, diagnostic_header)
+                    exports, imports = get_ports(tmp)
 
                     meta_directives += [types.SimpleNamespace(
                         source_file_path   = source_file_path,
@@ -852,7 +940,7 @@ def do(*,
                         tmp = tmp.removeprefix('#meta')
                         tmp = tmp.strip()
 
-                        exports, imports = get_ports(tmp, diagnostic_header)
+                        exports, imports = get_ports(tmp)
 
                         #
                         # Get lines of the block comment.
@@ -963,7 +1051,7 @@ def do(*,
     # Generate the Meta Python script.
     #
 
-    output_dir_path.mkdir(parents=True, exist_ok=True)
+    output_directory_path.mkdir(parents=True, exist_ok=True)
 
     meta_py = []
 

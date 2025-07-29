@@ -702,69 +702,6 @@ def do(*,
 
     ################################################################################################################################
     #
-    # Routine to parse and validate the meta-header.
-    # >
-    # >    #meta                     -> No exports; import everything.
-    # >    #meta A, B, C             -> Export A, B, and C; no explicit imports.
-    # >    #meta A, B, C :           -> Export A, B, and C and have every other meta-directive implicitly import A, B, C.
-    # >    #meta A, B, C : D, E, F   -> Export A, B, and C; explicitly import D, E, and F.
-    # >    #meta         : D, E, F   -> Export nothing; explicitly import D, E, and F.
-    # >    #meta         :           -> No exports; no imports at all.
-    # >
-
-    def get_ports(input):
-
-
-
-        # Split on the colon if there is one.
-
-        match input.split(':'):
-            case (exports,        ) : ports = [exports, None   ]
-            case (exports, imports) : ports = [exports, imports]
-            case _                  : assert False
-
-
-
-        # Process the LHS and RHS.
-
-        for port_i, port in enumerate(ports):
-
-            if port is None:
-                continue # Nothing to process here.
-
-
-
-            # Process each symbol.
-
-            symbols = []
-
-            for symbol in port.split(','):
-
-                symbol = symbol.strip()
-
-                if symbol == '':
-                    continue # We're fine with extra commas.
-
-                if not re.fullmatch('[a-zA-Z_][a-zA-Z0-9_]*', symbol):
-                    assert False, repr(symbol)
-
-                symbols += [symbol]
-
-
-
-            # We're find with duplicate symbols;
-            # doesn't really affect anything besides being redundant.
-
-            ports[port_i] = OrdSet(symbols)
-
-
-
-        return ports
-
-
-
-    ################################################################################################################################
-    #
     # Routine to parse the C preprocessor's include-directive.
     #
 
@@ -901,9 +838,58 @@ def do(*,
 
 
 
-            # We parse the meta-header.
+            # We then parse and validate the meta-header.
+            # >
+            # >    #meta                     -> No exports; import everything.
+            # >    #meta A, B, C             -> Export A, B, and C; no explicit imports.
+            # >    #meta A, B, C :           -> Export A, B, and C and have every other meta-directive implicitly import A, B, C.
+            # >    #meta A, B, C : D, E, F   -> Export A, B, and C; explicitly import D, E, and F.
+            # >    #meta         : D, E, F   -> Export nothing; explicitly import D, E, and F.
+            # >    #meta         :           -> No exports; no imports at all.
+            # >
 
-            exports, imports = get_ports(meta_header_line)
+            match meta_header_line.split(':'):
+                case (exports,        ) : ports = [exports, None   ]
+                case (exports, imports) : ports = [exports, imports]
+                case _                  : assert False
+
+
+
+            # Process the LHS and RHS.
+
+            for port_i, port in enumerate(ports):
+
+                if port is None:
+                    continue # Nothing to process here.
+
+
+
+                # Process each symbol.
+
+                symbols = []
+
+                for symbol in port.split(','):
+
+                    symbol = symbol.strip()
+
+                    if symbol == '':
+                        continue # We're fine with extra commas.
+
+                    if not re.fullmatch('[a-zA-Z_][a-zA-Z0-9_]*', symbol):
+                        assert False, repr(symbol)
+
+                    symbols += [symbol]
+
+
+
+                # We're find with duplicate symbols;
+                # doesn't really affect anything besides being redundant.
+
+                ports[port_i] = OrdSet(symbols)
+
+
+
+            exports, imports = ports
 
 
 
@@ -974,6 +960,7 @@ def do(*,
 
 
 
+    ################################################################################################################################
     #
     # Process the meta-directives' parameters.
     #

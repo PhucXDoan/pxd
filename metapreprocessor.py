@@ -21,17 +21,14 @@ class MetaError(Exception):
     def __str__(self):
         return self.diagnostic
 
+
+
 ################################################################################################################################
 #
-# The main toolbox used in Meta-directives to generate nice looking C code in a low-friction way.
+# The main toolbox used in meta-directives to generate nice looking C code in a low-friction way.
 #
 
 class __META__:
-
-
-
-    def __init__(self):
-        self.include_directive_file_path = None
 
 
 
@@ -50,7 +47,7 @@ class __META__:
     # when the meta-directive has no file to output it to.
     #
 
-    def _codegen(function):
+    def __codegen(function):
 
         def wrapper(self, *args, **kwargs):
 
@@ -172,7 +169,7 @@ class __META__:
     # >
     #
 
-    @_codegen
+    @__codegen
     def line(self, *args):
 
         if not args: # Create single empty line for `Meta.line()`.
@@ -251,7 +248,7 @@ class __META__:
     # >
     #
 
-    @_codegen
+    @__codegen
     @contextlib.contextmanager
     def enter(self, header = None, opening = None, closing = None, *, indented = None):
 
@@ -346,7 +343,7 @@ class __META__:
     # The actual routine to create the enumeration is a class so
     # that `Meta.enums` can be used as a context-manager if needed.
 
-    @_codegen
+    @__codegen
     def enums(self, *args, **kwargs):
         return self.__enums(self, *args, **kwargs)
 
@@ -516,7 +513,7 @@ class __META__:
     # >    #define MACRO_OVERLOAD__WORDIFY__3 THREE
     #
 
-    @_codegen
+    @__codegen
     def define(self, *args, do_while = False, **overloading):
 
 
@@ -700,7 +697,7 @@ class __META__:
     # >    #endif
     # >
 
-    @_codegen
+    @__codegen
     def ifs(self, items, style):
 
         items = tuple(items)
@@ -778,7 +775,7 @@ class __META__:
     # >        };
     # >
 
-    @_codegen
+    @__codegen
     def lut(self, table_name, entries):
 
 
@@ -917,25 +914,11 @@ class __META__:
 def do(*,
     output_directory_path,
     source_file_paths,
-    meta_py_file_path = None,
-    callback          = None,
+    callback = None,
 ):
-
-
-
-    # By default, we'll make a `__meta__.py` file that has all
-    # of the meta-directive's code put together to be then executed.
-
-    if meta_py_file_path is None:
-        meta_py_file_path = pathlib.Path(output_directory_path, '__meta__.py')
-
-
-
-    # Convert to pathlib.Path.
 
     output_directory_path = pathlib.Path(output_directory_path)
     source_file_paths     = tuple(map(pathlib.Path, source_file_paths))
-    meta_py_file_path     = pathlib.Path(meta_py_file_path)
 
 
 

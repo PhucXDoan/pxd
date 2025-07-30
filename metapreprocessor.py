@@ -1570,6 +1570,38 @@ def do(*,
 
 
 
+        # Log the reason.
+
+        with log(ansi = 'fg_red'):
+
+            match error:
+
+                # Sometimes the syntax error message will also mention a line number, but it won't be correct.
+                # This is a minor issue, though, so it's probably a not-fix.
+                # e.g: "[ERROR] closing parenthesis ')' does not match opening parenthesis '{' on line 10"
+                case SyntaxError():
+                    log(f'[ERROR] {error.args[0]}')
+
+                case NameError() | AttributeError() | ValueError():
+                    log(f'[ERROR] {error}')
+
+                case AssertionError():
+                    if error.args:
+                        log(f'[ERROR] {error.args[0]}')
+                    else:
+                        log(f'[ERROR] Assertion failed.')
+
+                case KeyError():
+                    log(f'[ERROR] Got {type(error).__name__}.')
+                    log(f'        > {error}')
+
+                case _:
+                    log(f'[ERROR] Got {type(error).__name__}.')
+                    if str(error).strip():
+                        log(f'        > {error}')
+
+
+
         # User deals with the exception now.
 
         raise MetaError from error

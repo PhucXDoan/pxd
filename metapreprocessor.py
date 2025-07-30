@@ -23,12 +23,10 @@ class MetaError(Exception):
 
 ################################################################################################################################
 #
-# The `Meta` class is the main toolbox used in Meta-directives
-# to generate nice looking C code in a low-friction way.
+# The main toolbox used in Meta-directives to generate nice looking C code in a low-friction way.
 #
 
-
-class Meta:
+class __META__:
 
 
 
@@ -1338,14 +1336,14 @@ def do(*,
     # The meta-decorator that handles the the set-up and resolution of a meta-directive's execution.
     #
 
-
     current_meta_directive_index = 0
+    Meta                         = __META__()
 
     def __META_DECORATOR__(meta_globals):
 
         def decorator(function):
 
-            nonlocal current_meta_directive_index
+            nonlocal current_meta_directive_index, Meta
 
 
 
@@ -1365,13 +1363,13 @@ def do(*,
 
 
 
-            # Meta is special in that it is the only global singleton. This is for meta-directives that
+            # Meta is special in that it needs to be a global singleton. This is for meta-directives that
             # define functions that use Meta itself to generate code, and that function might be called
             # in a different meta-directive. They all need to refer to the same object, so one singleton
             # must be made for everyone to refer to. Still, checks are put in place to make Meta illegal
             # to use in meta-directives that do not have an associated include-directive.
 
-            function_globals = { 'Meta' : meta_globals['Meta'] }
+            function_globals = { 'Meta' : Meta }
 
 
 
@@ -1392,9 +1390,9 @@ def do(*,
 
             # Execute the meta-directive.
 
-            function_globals['Meta']._start(meta_directive)
+            Meta._start(meta_directive)
             types.FunctionType(function.__code__, function_globals)()
-            function_globals['Meta']._end()
+            Meta._end()
 
 
 
@@ -1418,7 +1416,7 @@ def do(*,
             if callback is not None:
 
                 try:
-                    callback_iterator.send(function_globals['Meta'].output)
+                    callback_iterator.send(Meta.output)
                     stopped = False
                 except StopIteration:
                     stopped = True
@@ -1486,7 +1484,7 @@ def do(*,
             meta_py,
             {
                 '__META_DECORATOR__' : __META_DECORATOR__,
-                '__META_GLOBALS__'   : { 'Meta' : Meta() },
+                '__META_GLOBALS__'   : {},
             },
             {},
         )

@@ -16,7 +16,7 @@ class MetaError(Exception):
         self.diagnostic                = diagnostic
         self.undefined_exported_symbol = undefined_exported_symbol # When a meta-directive doesn't define a symbol it said it'd export.
         self.source_file_path          = source_file_path          # "
-        self.meta_header_line_number   = meta_header_line_number        # "
+        self.meta_header_line_number   = meta_header_line_number   # "
 
     def __str__(self):
         return self.diagnostic

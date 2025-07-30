@@ -167,14 +167,14 @@ class OrdSet:
     def __init__(self, given = ()):
         self.elems = tuple(dict.fromkeys(given).keys())
 
-    def __str__(self):
+    def __repr__(self):
         if self.elems:
-            return f'{{ {', '.join(map(repr, self.elems))} }}'
+            return f'OrdSet({', '.join(map(repr, self.elems))})'
         else:
             return '{}'
 
-    def __repr__(self):
-        return str(self)
+    def __str__(self):
+        return repr(self)
 
     def __iter__(self):
         for elem in self.elems:

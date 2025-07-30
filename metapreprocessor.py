@@ -841,22 +841,22 @@ def do(*,
             # We then parse and validate the meta-header.
 
             match meta_header_line.split(':'):
-                case (exports,        ) : ports = [exports, None   ]
-                case (exports, imports) : ports = [exports, imports]
-                case _                  : assert False
+
+                case [exports]:
+                    ports            = [exports, '']
+                    has_import_field = False
+
+                case [exports, imports]:
+                    ports            = [exports, imports]
+                    has_import_field = True
+
+                case _: assert False
 
 
 
             # Process the LHS and RHS.
 
             for port_i, port in enumerate(ports):
-
-                if port is None:
-                    continue # Nothing to process here.
-
-
-
-                # Process each symbol.
 
                 symbols = []
 
@@ -947,6 +947,7 @@ def do(*,
                 include_directive_file_path = include_directive_file_path,
                 exports                     = exports,
                 imports                     = imports,
+                global_exporter             = has_import_field and not imports,
                 body_lines                  = deindent('\n'.join(body_lines)).splitlines(),
             )]
 
@@ -991,9 +992,6 @@ def do(*,
 
     for meta_directive in meta_directives:
 
-        if meta_directive.imports is None:
-            continue
-
         for symbol in meta_directive.imports:
 
             if symbol in meta_directive.exports:
@@ -1019,10 +1017,10 @@ def do(*,
 
 
 
-    # If no exports/imports are explicitly given, then the meta-directive implicitly imports everything.
+    # If it's just a bare meta-header, then the meta-directive implicitly imports everything.
 
     for meta_directive in meta_directives:
-        if meta_directive.exports == OrdSet() and meta_directive.imports is None:
+        if not meta_directive.exports and not meta_directive.imports and not meta_directive.global_exporter:
             meta_directive.imports = all_exports
 
 
@@ -1033,25 +1031,13 @@ def do(*,
     implicit_global_import = OrdSet(
         symbol
         for meta_directive in meta_directives
-        if meta_directive.imports == OrdSet()
+        if meta_directive.global_exporter
         for symbol in meta_directive.exports
     )
 
     for meta_directive in meta_directives:
-
-        if meta_directive.imports == OrdSet():
-            continue
-
-        if meta_directive.imports is None:
-            meta_directive.imports = OrdSet()
-
-        meta_directive.imports |= implicit_global_import
-
-
-
-    for meta_directive in meta_directives:
-        if meta_directive.imports is None:
-            meta_directive.imports = OrdSet()
+        if not meta_directive.global_exporter:
+            meta_directive.imports |= implicit_global_import
 
 
 

@@ -923,18 +923,19 @@ def do(*,
 
 
 
-    # Convert to pathlib.Path.
-
-    output_directory_path = pathlib.Path(output_directory_path)
-    source_file_paths     = tuple(map(pathlib.Path, source_file_paths))
-
-
-
     # By default, we'll make a `__meta__.py` file that has all
     # of the meta-directive's code put together to be then executed.
 
     if meta_py_file_path is None:
         meta_py_file_path = pathlib.Path(output_directory_path, '__meta__.py')
+
+
+
+    # Convert to pathlib.Path.
+
+    output_directory_path = pathlib.Path(output_directory_path)
+    source_file_paths     = tuple(map(pathlib.Path, source_file_paths))
+    meta_py_file_path     = pathlib.Path(meta_py_file_path)
 
 
 

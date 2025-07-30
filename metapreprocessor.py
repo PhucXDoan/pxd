@@ -1049,33 +1049,41 @@ def do(*,
 
 
 
+    for meta_directive in meta_directives:
+        if meta_directive.imports is None:
+            meta_directive.imports = OrdSet()
+
+
+
     ################################################################################################################################
     #
-    # Sort the #meta directives.
+    # Sort the meta-directives.
     #
 
-    # Meta-directives with empty imports are always done first,
-    # because their exports will be implicitly imported to all the other meta-directives.
-    remaining_meta_directives = meta_directives[:]
+    remaining_meta_directives = meta_directives
     meta_directives           = []
-    current_symbols           = OrdSet()
+    available_symbols         = OrdSet()
 
     while remaining_meta_directives:
 
-        # Find next meta-directive that has all of its imports satisfied.
-        next_directivei, next_directive = next((
-            (i, meta_directive)
-            for i, meta_directive in enumerate(remaining_meta_directives)
-            if meta_directive.imports is None or all(symbol in current_symbols for symbol in meta_directive.imports)
-        ), (None, None))
+        for meta_directive_i, meta_directive in enumerate(remaining_meta_directives):
 
-        if next_directivei is None:
+            if not all(symbol in available_symbols for symbol in meta_directive.imports):
+                continue
+
+            available_symbols |= meta_directive.exports
+            meta_directives   += [meta_directive]
+            del remaining_meta_directives[meta_directive_i]
+
+            break
+
+        else:
+
             raise MetaError(f'# Meta-directive has a circular import dependency.') # TODO Better error message.
 
-        current_symbols |=  next_directive.exports
-        meta_directives += [next_directive]
-        del remaining_meta_directives[next_directivei]
 
+
+    ################################################################################################################################
     #
     # Generate the Meta Python script.
     #

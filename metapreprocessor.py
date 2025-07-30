@@ -1460,7 +1460,7 @@ def do(*,
 
             case SyntaxError():
 
-                if not (match := (meta_directive for meta_directive in meta_directives if meta_directive.bytecode_name == error.filename)):
+                if not (match := [meta_directive for meta_directive in meta_directives if meta_directive.bytecode_name == error.filename]):
                     raise
 
                 meta_directive, = match
@@ -1473,8 +1473,41 @@ def do(*,
 
 
 
+            # For most errors we can inspect the traceback to show all the levels of function calls.
+
             case _:
-                raise
+
+
+
+                # Get the tracebacks after we begin executing the meta-directive's Python snippet.
+
+                traces = traceback.extract_tb(sys.exc_info()[2])
+
+                while traces and traces[0].name != '__META_DIRECTIVE__':
+                    del traces[0]
+
+                if not traces:
+                    raise # Otherwise something else happened outside of the meta-directive...
+
+
+
+                # Find each level of the stack; some might be in a meta-directive while others are in a imported module.
+
+                for trace in traces:
+
+                   if match := [meta_directive for meta_directive in meta_directives if meta_directive.bytecode_name == trace.filename]:
+                       meta_directive,   = match
+                       stack_file_path   = meta_directive.source_file_path
+                       stack_line_number = (meta_directive.meta_header_line_number + 1) + trace.lineno - meta_directive.body_line_number
+                   else:
+                       stack_file_path   = pathlib.Path(trace.filename)
+                       stack_line_number = trace.lineno
+
+                   stacks += [types.SimpleNamespace(
+                       file_path     = stack_file_path,
+                       line_number   = stack_line_number,
+                       function_name = '<meta-directive>' if trace.name == '__META_DIRECTIVE__' else trace.name,
+                   )]
 
 
 
@@ -1493,7 +1526,7 @@ def do(*,
 
         log()
 
-        line_number_just = max(0, *(len(str(stack.line_number + stack.lines[-1][0])) for stack in stacks))
+        line_number_just = max([0] + [len(str(stack.line_number + stack.lines[-1][0])) for stack in stacks])
 
         for stack_i, stack in enumerate(stacks):
 

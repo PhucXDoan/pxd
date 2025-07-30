@@ -172,10 +172,13 @@ def deindent(string, *, multilined_string_literal = True, single_line_comment = 
 
 
 
-        # Determine if this is the first line we've seen that should set the indentation for the whole string.
+        # Determine if this line is of interest and has the minimum amount of indentation.
 
-        if global_indent is None and not is_comment and line.strip():
-            global_indent = line_indent
+        if not is_comment and line.strip():
+            if global_indent is None:
+                global_indent = line_indent
+            else:
+                global_indent = min(line_indent, global_indent)
 
 
 

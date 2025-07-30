@@ -1195,6 +1195,7 @@ def do(*,
                 imports                       = imports,
                 global_exporter               = has_import_field and not imports,
                 body_lines                    = body_lines,
+                bytecode_name                 = None,
             )]
 
 
@@ -1439,6 +1440,111 @@ def do(*,
 
     ################################################################################################################################
     #
+    # Routine to handle exceptions that occured during compilation or execution of meta-directives.
+    #
+
+    def diagnose(error):
+
+
+
+        # Determine the stack trace.
+
+        stacks = []
+
+        match error:
+
+
+
+            # Likely a meta-directive that caused this syntax error;
+            # otherwise, probably something else obscure (e.g. meta-directive running `exec` or importing).
+
+            case SyntaxError():
+
+                if not (match := (meta_directive for meta_directive in meta_directives if meta_directive.bytecode_name == error.filename)):
+                    raise
+
+                meta_directive, = match
+
+                stacks += [types.SimpleNamespace(
+                    file_path     = meta_directive.source_file_path,
+                    line_number   = (meta_directive.meta_header_line_number + 1) + error.lineno - meta_directive.body_line_number,
+                    function_name = None,
+                )]
+
+
+
+            case _:
+                raise
+
+
+
+        # Get the surrounding context of each stack.
+
+        for stack in stacks:
+            stack.lines = [
+                ((line_i + 1) - stack.line_number, line)
+                for line_i, line in enumerate(stack.file_path.read_text().splitlines())
+                if abs((line_i + 1) - stack.line_number) <= 4
+            ]
+
+
+
+        # Log the stack trace.
+
+        log()
+
+        line_number_just = max(0, *(len(str(stack.line_number + stack.lines[-1][0])) for stack in stacks))
+
+        for stack_i, stack in enumerate(stacks):
+
+
+
+            # Spacer.
+
+            if stack_i:
+                log(' ' * line_number_just + ' .'                           )
+                log(' ' * line_number_just + ' . ', end = ''                )
+                log('.' * 150                     , ansi = 'fg_bright_black')
+                log(' ' * line_number_just + ' .'                           )
+
+
+
+            # Show the context.
+
+            log(' ' * line_number_just + ' |')
+
+            for line_delta, line in stack.lines:
+
+                with log(ansi = 'bold' if line_delta == 0 else None): # TODO Allow end = ''.
+
+                    line_number = stack.line_number + line_delta
+
+                    log(f'{str(line_number).rjust(line_number_just)} |', end  = ''                                             )
+                    log(f' {line}'                                     , ansi = 'bg_red' if line_delta == 0 else None, end = '')
+
+                    if line_delta == 0:
+
+                        log(f' <- {stack.file_path} : {line_number}', ansi = 'fg_yellow', end = '')
+
+                        if stack.function_name is not None:
+                            log(f' : {stack.function_name}', ansi = 'fg_yellow', end = '')
+
+                    log()
+
+            log(' ' * line_number_just + ' |')
+
+        log()
+
+
+
+        # User deals with the exception now.
+
+        raise MetaError from error
+
+
+
+    ################################################################################################################################
+    #
     # Compile each meta-directive to catch any syntax errors.
     #
 
@@ -1494,22 +1600,12 @@ def do(*,
         # rather than all together at once because a syntax error can "leak" across multiple
         # meta-directives, to which it's then hard to identify where the exact source of the syntax error is.
 
+        meta_directive.bytecode_name = f'MetaDirective({meta_directive.source_file_path}:{meta_directive.meta_header_line_number})'
+
         try:
-            meta_directive.bytecode = compile(
-                '\n'.join(meta_code),
-                f'MetaDirective({meta_directive.source_file_path}:{meta_directive.meta_header_line_number})',
-                'exec'
-            )
-
-
-
-        ################################################################################################################################
-        #
-        # Provide diagnostics for any syntax errors during compilation.
-        #
-
-        except err:
-            assert False
+            meta_directive.bytecode = compile('\n'.join(meta_code), meta_directive.bytecode_name, 'exec')
+        except Exception as error:
+            diagnose(error)
 
 
 
@@ -1528,12 +1624,5 @@ def do(*,
 
             exec(meta_directive.bytecode, globals, {})
 
-
-
-    ################################################################################################################################
-    #
-    # Provide diagnostics for any runtime exceptions during execution.
-    #
-
-    except err:
-        assert False
+    except Exception as error:
+        diagnose(error)

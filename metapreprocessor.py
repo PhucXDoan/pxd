@@ -1442,59 +1442,88 @@ def do(*,
     # Create the Python file of all of the meta-directives together to be then executed.
     #
 
+
+
+    # This is where all of the generated files will be dumped.
+
     output_directory_path.mkdir(parents = True, exist_ok = True)
 
-    meta_py = []
+
+
+    # Put in every meta-directive into one big file.
+
+    meta_py_content = []
 
     for meta_directive_i, meta_directive in enumerate(meta_directives):
 
-        meta_py += deindent(f'''
-            @__META_DECORATOR__(__META_GLOBALS__)
-            def __META_DIRECTIVE__():
-        ''').splitlines()
+
+
+        # Every meta-directive is executed within a function context wrapped by the decorator.
+
+        meta_py_content += [
+            f'@__META_DECORATOR__(__META_GLOBALS__)',
+            f'def __META_DIRECTIVE__():',
+        ]
+
+
 
         # List the things that the function is expected to define in the global namespace.
+
         if meta_directive.exports:
-            meta_py += [f'    global {', '.join(meta_directive.exports)}']
+            meta_py_content += [
+                f'',
+                f'    global {', '.join(meta_directive.exports)}',
+            ]
+
+
 
         # If the #meta directive has no code and doesn't export anything,
         # the function would end up empty, which is invalid Python syntax;
         # having a `pass` is a simple fix for this edge case.
-        if not any(line.strip() and line.strip()[0] != '#' for line in meta_directive.body_lines) and not meta_directive.exports:
-            meta_py += ['    pass']
 
-        # Inject the #meta directive's Python snippet.
-        meta_py += ['']
-        meta_directive.meta_py_line_number = len(meta_py) + 1
-        for line in deindent('\n'.join(meta_directive.body_lines)).splitlines():
-            meta_py += [f'    {line}' if line else '']
-        meta_py += ['']
+        meta_py_content += ['    pass']
 
-    meta_py = '\n'.join(meta_py) + '\n'
 
-    # Output the Meta Python script for debuggability.
-    pathlib.Path(meta_py_file_path).parent.mkdir(parents=True, exist_ok=True)
-    open(meta_py_file_path, 'w').write(meta_py)
 
-    #
-    # Execute the Meta Python file.
-    #
+        # Inject the meta-directive's Python snippet.
+
+        meta_py_content += ['']
+
+        meta_directive.meta_py_line_number = len(meta_py_content) + 1
+
+        meta_py_content += [
+            (' ' * (4 if line else 0)) + line
+            for line in deindent('\n'.join(meta_directive.body_lines)).splitlines()
+        ]
+
+        meta_py_content += ['']
+
+
+
+    meta_py_content = '\n'.join(meta_py_content) + '\n'
+
+
+
+    # Output the jumbo Python script for debuggability.
+
+    meta_py_file_path.parent.mkdir(parents = True, exist_ok = True)
+    meta_py_file_path.write_text(meta_py_content)
+
+
+
+    # Finally execute the meta-directives!
 
     try:
-        exec(
-            meta_py,
-            {
-                '__META_DECORATOR__' : __META_DECORATOR__,
-                '__META_GLOBALS__'   : {},
-            },
-            {},
-        )
+        exec(meta_py_content, { '__META_DECORATOR__' : __META_DECORATOR__, '__META_GLOBALS__' : {} }, {})
+
+
+
+    ################################################################################################################################
+    #
+    # Get the file paths, line numbers, and code to show for the diagnostic.
+    #
 
     except Exception as err:
-
-        #
-        # Get the file paths, line numbers, and code to show for the diagnostic.
-        #
 
         stacks = []
 

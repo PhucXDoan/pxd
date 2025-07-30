@@ -37,8 +37,8 @@ class Meta:
 
 
 
-    def _start(self, include_file_path, source_file_path, include_directive_line_number):
-        self.include_file_path             = include_file_path
+    def _start(self, include_directive_file_path, source_file_path, include_directive_line_number):
+        self.include_directive_file_path   = include_directive_file_path
         self.source_file_path              = source_file_path
         self.include_directive_line_number = include_directive_line_number
         self.output                        = ''
@@ -58,7 +58,7 @@ class Meta:
 
         def wrapper(self, *args, **kwargs):
 
-            if self.include_file_path is None:
+            if self.include_directive_file_path is None:
                 raise MetaError('Meta used in a meta-directive that has no associated include file path.')
 
             return function(self, *args, **kwargs)
@@ -1416,28 +1416,18 @@ def do(*,
 
     for meta_directive_i, meta_directive in enumerate(meta_directives):
 
-        kwargs = {
-            'index' : meta_directive_i,
-        }
-
-        for key in (
-            'source_file_path',
-            'meta_header_line_number',
-            'include_directive_file_path',
-            'include_directive_line_number',
-            'exports',
-            'imports',
-        ):
-
-            match meta_directive[key]:
-                case pathlib.Path() : value = repr(str(meta_directive[key]))
-                case OrdSet()       : value = tuple(meta_directive[key])
-                case _              : value = meta_directive[key]
-
-            kwargs[key] = value
-
         meta_py += deindent(f'''
-            @MetaDirective(**{repr(kwargs)}, meta_globals = __META_GLOBALS__, **__META_SHARED__)
+            @MetaDirective(
+                index                         = {meta_directive_i},
+                source_file_path              = {repr(str(meta_directive.source_file_path))},
+                meta_header_line_number       = {meta_directive.meta_header_line_number},
+                include_directive_file_path   = {repr(str(meta_directive.include_directive_file_path))  },
+                include_directive_line_number = {meta_directive.include_directive_line_number},
+                exports                       = {repr(tuple(meta_directive.exports))},
+                imports                       = {repr(tuple(meta_directive.imports))},
+                meta_globals                  = __META_GLOBALS__,
+                **__META_SHARED__
+            )
             def __META__():
         ''').splitlines()
 

@@ -1304,17 +1304,34 @@ def do(*,
 
         for meta_directive_i, meta_directive in enumerate(remaining_meta_directives):
 
+
+
+            # This meta-directive doesn't have all of its imports satisfied yet.
+
             if not all(symbol in available_symbols for symbol in meta_directive.imports):
                 continue
 
+
+
+            # This meta-directive would be executed and define all
+            # of its exported symbols for later meta-directives to use.
+
             available_symbols |= meta_directive.exports
-            meta_directives   += [meta_directive]
+
+
+
+            # Remove from pool.
+
+            meta_directives += [meta_directive]
             del remaining_meta_directives[meta_directive_i]
 
             break
 
-        else:
 
+
+        # Couldn't find the next meta-directive to execute.
+
+        else:
             raise MetaError(f'# Meta-directive has a circular import dependency.') # TODO Better error message.
 
 

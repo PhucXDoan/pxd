@@ -1,6 +1,6 @@
 import pathlib, types, contextlib, re, traceback, builtins, sys, copy
 from ..pxd.log   import log
-from ..pxd.utils import ljusts, root, deindent, repr_in_c, mk_dict, find_dupe, coalesce, Record, OrdSet, ErrorLift
+from ..pxd.utils import ljusts, root, deindent, repr_in_c, mk_dict, find_dupe, coalesce, Obj, Record, OrdSet, ErrorLift
 
 # TODO Warn on unused symbols.
 
@@ -11,12 +11,12 @@ class MetaError(Exception):
         diagnostic                = None, *,
         undefined_exported_symbol = None,
         source_file_path          = None,
-        header_line_number        = None
+        meta_header_line_number   = None
     ):
         self.diagnostic                = diagnostic
         self.undefined_exported_symbol = undefined_exported_symbol # When a meta-directive doesn't define a symbol it said it'd export.
         self.source_file_path          = source_file_path          # "
-        self.header_line_number        = header_line_number        # "
+        self.meta_header_line_number   = meta_header_line_number        # "
 
     def __str__(self):
         return self.diagnostic
@@ -26,12 +26,12 @@ class MetaError(Exception):
 class Meta:
 
     def __init__(self):
-        self.__dict__['include_file_path'] = None
+        self.__dict__['include_directive_file_path'] = None
 
 
-    def _start(self, include_file_path, source_file_path, include_directive_line_number):
+    def _start(self, include_directive_file_path, source_file_path, include_directive_line_number):
         self.__dict__ |= {
-            'include_file_path'              : include_file_path,
+            'include_directive_file_path'    : include_directive_file_path,
             'source_file_path'               : source_file_path,
             'include_directive_line_number'  : include_directive_line_number,
             'output'                         : '',
@@ -43,7 +43,7 @@ class Meta:
 
     def __setattr__(self, key, value):
 
-        if self.__dict__['include_file_path'] is None and key in ('output', 'indent', 'within_macro', 'overloads'):
+        if self.__dict__['include_directive_file_path'] is None and key in ('output', 'indent', 'within_macro', 'overloads'):
             raise MetaError(ErrorLift(f'The meta-directive needs to have an include-directive to use Meta.'))
 
         self.__dict__[key] = value
@@ -52,7 +52,7 @@ class Meta:
     def _end(self):
 
         # No generated code if there's no #include directive.
-        if self.include_file_path is None:
+        if self.include_directive_file_path is None:
             return
 
         # We need to insert some stuff at the beginning of the file...
@@ -84,8 +84,8 @@ class Meta:
             self.line(generated)
 
         # Spit out the generated code.
-        pathlib.Path(self.include_file_path).parent.mkdir(parents=True, exist_ok=True)
-        open(self.include_file_path, 'w').write(self.output)
+        pathlib.Path(self.include_directive_file_path).parent.mkdir(parents=True, exist_ok=True)
+        open(self.include_directive_file_path, 'w').write(self.output)
 
 
     def line(self, *inputs): # TODO More consistent trimming of newlines.
@@ -632,7 +632,7 @@ def MetaDirective(**info):
         # Execute the meta-directive.
         #
 
-        function_globals['Meta']._start(info.include_file_path, info.source_file_path, info.include_directive_line_number)
+        function_globals['Meta']._start(info.include_directive_file_path, info.source_file_path, info.include_directive_line_number)
         types.FunctionType(function.__code__, function_globals)()
         function_globals['Meta']._end()
 
@@ -646,7 +646,7 @@ def MetaDirective(**info):
                 raise MetaError(
                     undefined_exported_symbol = symbol,
                     source_file_path          = info.source_file_path,
-                    header_line_number        = info.header_line_number,
+                    meta_header_line_number   = info.meta_header_line_number,
                 )
 
             info.meta_globals[symbol] = function_globals[symbol]
@@ -789,9 +789,15 @@ def do(*,
 
             include_directive_file_path = get_include_directive_file_path(remaining_lines[0])
 
-            if include_directive_file_path is not None:
-                remaining_lines        = remaining_lines[1:]
-                remaining_line_number += 1
+            if include_directive_file_path is None:
+
+                include_directive_line_number = None
+
+            else:
+
+                include_directive_line_number  = remaining_line_number
+                remaining_lines                = remaining_lines[1:]
+                remaining_line_number         += 1
 
 
 
@@ -941,14 +947,16 @@ def do(*,
 
             # Finished processing this meta-directive.
 
-            meta_directives += [types.SimpleNamespace(
-                source_file_path            = source_file_path,
-                meta_header_line_number     = meta_header_line_number,
-                include_directive_file_path = include_directive_file_path,
-                exports                     = exports,
-                imports                     = imports,
-                global_exporter             = has_import_field and not imports,
-                body_lines                  = deindent('\n'.join(body_lines)).splitlines(),
+            meta_directives += [Obj(
+                source_file_path              = source_file_path,
+                meta_header_line_number       = meta_header_line_number,
+                include_directive_file_path   = include_directive_file_path,
+                include_directive_line_number = include_directive_line_number,
+                exports                       = exports,
+                imports                       = imports,
+                global_exporter               = has_import_field and not imports,
+                body_lines                    = body_lines,
+                meta_py_line_number           = None,
             )]
 
 
@@ -968,8 +976,8 @@ def do(*,
 
         raise MetaError(
             f'# Meta-directives with the same output file path of "{dupes[0].include_directive_file_path}": ' \
-            f'[{dupes[0].source_file_path}:{dupes[0].meta_header_line_number - 1}] and ' \
-            f'[{dupes[1].source_file_path}:{dupes[1].meta_header_line_number - 1}].'
+            f'[{dupes[0].source_file_path}:{dupes[0].include_directive_line_number}] and ' \
+            f'[{dupes[1].source_file_path}:{dupes[1].include_directive_line_number}].'
         )
 
 
@@ -1071,40 +1079,37 @@ def do(*,
 
     ################################################################################################################################
     #
-    # Generate the Meta Python script.
+    # Create the Python file of all of the meta-directives together to be then executed.
     #
 
-    output_directory_path.mkdir(parents=True, exist_ok=True)
+    output_directory_path.mkdir(parents = True, exist_ok = True)
 
     meta_py = []
 
-    # Additional context.
     for meta_directive_i, meta_directive in enumerate(meta_directives):
 
-        if meta_directive.include_directive_file_path is None:
-            include_file_path             = None
-            include_directive_line_number = None
-        else:
-            include_file_path             = f"r'{meta_directive.include_directive_file_path}'"
-            include_directive_line_number =      meta_directive.meta_header_line_number - 1
+        kwargs = {
+            'index' : meta_directive_i,
+        }
 
-        imports = meta_directive.imports
+        for key in (
+            'source_file_path',
+            'meta_header_line_number',
+            'include_directive_file_path',
+            'include_directive_line_number',
+            'exports',
+            'imports',
+        ):
 
-        exports = ', '.join(map(repr, meta_directive.exports))
-        imports = ', '.join(map(repr, imports        ))
+            match meta_directive[key]:
+                case pathlib.Path() : value = repr(str(meta_directive[key]))
+                case OrdSet()       : value = tuple(meta_directive[key])
+                case _              : value = meta_directive[key]
+
+            kwargs[key] = value
 
         meta_py += deindent(f'''
-            @MetaDirective(
-                index                         = {meta_directive_i},
-                source_file_path              = r'{meta_directive.source_file_path}',
-                header_line_number            = {meta_directive.meta_header_line_number},
-                include_file_path             = {include_file_path            },
-                include_directive_line_number = {include_directive_line_number},
-                exports                       = [{exports}],
-                imports                       = [{imports}],
-                meta_globals                  = __META_GLOBALS__,
-                **__META_SHARED__
-            )
+            @MetaDirective(**{repr(kwargs)}, meta_globals = __META_GLOBALS__, **__META_SHARED__)
             def __META__():
         ''').splitlines()
 
@@ -1121,7 +1126,7 @@ def do(*,
         # Inject the #meta directive's Python snippet.
         meta_py += ['']
         meta_directive.meta_py_line_number = len(meta_py) + 1
-        for line in meta_directive.body_lines:
+        for line in deindent('\n'.join(meta_directive.body_lines)).splitlines():
             meta_py += [f'    {line}' if line else '']
         meta_py += ['']
 
@@ -1171,7 +1176,7 @@ def do(*,
             case meta_err if isinstance(meta_err, MetaError) and meta_err.undefined_exported_symbol is not None:
                 stacks += [types.SimpleNamespace(
                     file_path   = root(err.source_file_path),
-                    line_number = err.header_line_number,
+                    line_number = err.meta_header_line_number,
                     func_name   = '<meta-directive>',
                 )]
 

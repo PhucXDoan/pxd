@@ -37,14 +37,12 @@ class Meta:
 
 
 
-    def _start(self, include_directive_file_path, source_file_path, include_directive_line_number):
-        self.include_directive_file_path   = include_directive_file_path
-        self.source_file_path              = source_file_path
-        self.include_directive_line_number = include_directive_line_number
-        self.output                        = ''
-        self.indent                        = 0
-        self.within_macro                  = False
-        self.overloads                     = {}
+    def _start(self, meta_directive):
+        self.meta_directive = meta_directive
+        self.output         = ''
+        self.indent         = 0
+        self.within_macro   = False
+        self.overloads      = {}
 
 
 
@@ -58,7 +56,7 @@ class Meta:
 
         def wrapper(self, *args, **kwargs):
 
-            if self.include_directive_file_path is None:
+            if self.meta_directive.include_directive_file_path is None:
                 raise MetaError('Meta used in a meta-directive that has no associated include file path.')
 
             return function(self, *args, **kwargs)
@@ -78,7 +76,7 @@ class Meta:
 
         # No generated code if there's no #include directive.
 
-        if self.include_directive_file_path is None:
+        if self.meta_directive.include_directive_file_path is None:
             return
 
 
@@ -92,7 +90,7 @@ class Meta:
 
         # Indicate origin of the meta-directive in the generated output.
 
-        self.line(f'// [{self.source_file_path}:{self.include_directive_line_number}].')
+        self.line(f'// [{self.meta_directive.source_file_path}:{self.meta_directive.include_directive_line_number}].')
 
 
 
@@ -147,8 +145,8 @@ class Meta:
 
         # Spit out the generated code.
 
-        pathlib.Path(self.include_directive_file_path).parent.mkdir(parents = True, exist_ok = True)
-        pathlib.Path(self.include_directive_file_path).write_text(self.output)
+        pathlib.Path(self.meta_directive.include_directive_file_path).parent.mkdir(parents = True, exist_ok = True)
+        pathlib.Path(self.meta_directive.include_directive_file_path).write_text(self.output)
 
 
 
@@ -1391,7 +1389,7 @@ def do(*,
             # Execute the meta-directive.
             #
 
-            function_globals['Meta']._start(meta_directive.include_directive_file_path, meta_directive.source_file_path, meta_directive.include_directive_line_number)
+            function_globals['Meta']._start(meta_directive)
             types.FunctionType(function.__code__, function_globals)()
             function_globals['Meta']._end()
 

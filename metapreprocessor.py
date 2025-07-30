@@ -1347,11 +1347,15 @@ def do(*,
 
             nonlocal current_meta_directive_index
 
+
+
+            # This should be the meta-directive that we're executing now.
+
             meta_directive = meta_directives[current_meta_directive_index]
 
-            #
-            # Start of callback.
-            #
+
+
+            # Start of the callback.
 
             if callback is None:
                 callback_iterator = None
@@ -1359,43 +1363,42 @@ def do(*,
                 callback_iterator = callback(current_meta_directive_index, meta_directives)
                 next(callback_iterator)
 
-            #
-            # Determine the global namespace.
-            #
 
-            function_globals = {}
-
-            for symbol in meta_directive.imports:
-
-                # We have to skip modules since they're not deepcopy-able.
-                if isinstance(meta_globals[symbol], types.ModuleType):
-                    function_globals[symbol] = meta_globals[symbol]
-
-                # We deepcopy exported values so that if a meta-directive mutates it for some reason,
-                # it'll only be contained within that meta-directive; this isn't really necessary,
-                # but since meta-directives are evaluated mostly out-of-order, it helps keep the
-                # uncertainty factor lower.
-                else:
-                    function_globals[symbol] = copy.deepcopy(meta_globals[symbol])
 
             # Meta is special in that it is the only global singleton. This is for meta-directives that
             # define functions that use Meta itself to generate code, and that function might be called
             # in a different meta-directive. They all need to refer to the same object, so one singleton
             # must be made for everyone to refer to. Still, checks are put in place to make Meta illegal
-            # to use in meta-directives that do not have an associated #include.
-            function_globals['Meta'] = meta_globals['Meta']
+            # to use in meta-directives that do not have an associated include-directive.
 
-            #
+            function_globals = { 'Meta' : meta_globals['Meta'] }
+
+
+
+            # We deepcopy exported values to be then put in the function's global namespace
+            # so that if a meta-directive mutates it for some reason,
+            # it'll only be contained within that meta-directive; this isn't really necessary,
+            # but since meta-directives are evaluated mostly out-of-order, it helps keep the
+            # uncertainty factor lower. This, however, does induce a performance hit if the object
+            # is quite large.
+
+            for symbol in meta_directive.imports:
+                if isinstance(meta_globals[symbol], types.ModuleType): # Modules are not deepcopy-able.
+                    function_globals[symbol] = meta_globals[symbol]
+                else:
+                    function_globals[symbol] = copy.deepcopy(meta_globals[symbol])
+
+
+
             # Execute the meta-directive.
-            #
 
             function_globals['Meta']._start(meta_directive)
             types.FunctionType(function.__code__, function_globals)()
             function_globals['Meta']._end()
 
-            #
-            # Copy the exported symbols into the collective namespace.
-            #
+
+
+            # Copy the exported symbols into the collective symbol namespace so far.
 
             for symbol in meta_directive.exports:
 
@@ -1408,23 +1411,28 @@ def do(*,
 
                 meta_globals[symbol] = function_globals[symbol]
 
-            #
+
+
             # End of callback.
-            #
 
             if callback is not None:
 
-                stopped = False
-
                 try:
                     callback_iterator.send(function_globals['Meta'].output)
+                    stopped = False
                 except StopIteration:
                     stopped = True
 
                 if not stopped:
                     raise RuntimeError('Callback did not return.')
 
+
+
+            # Onto next meta-directive!
+
             current_meta_directive_index += 1
+
+
 
         return decorator
 

@@ -1439,28 +1439,16 @@ def do(*,
 
     ################################################################################################################################
     #
-    # Create the Python file of all of the meta-directives together to be then executed.
+    # Compile each meta-directive to catch any syntax errors.
     #
 
-
-
-    # This is where all of the generated files will be dumped.
-
-    output_directory_path.mkdir(parents = True, exist_ok = True)
-
-
-
-    # Put in every meta-directive into one big file.
-
-    meta_py_content = []
-
-    for meta_directive_i, meta_directive in enumerate(meta_directives):
+    for meta_directive in meta_directives:
 
 
 
         # Every meta-directive is executed within a function context wrapped by the decorator.
 
-        meta_py_content += [
+        meta_code = [
             f'@__META_DECORATOR__(__META_GLOBALS__)',
             f'def __META_DIRECTIVE__():',
         ]
@@ -1470,7 +1458,7 @@ def do(*,
         # List the things that the function is expected to define in the global namespace.
 
         if meta_directive.exports:
-            meta_py_content += [
+            meta_code += [
                 f'',
                 f'    global {', '.join(meta_directive.exports)}',
             ]
@@ -1481,17 +1469,17 @@ def do(*,
         # the function would end up empty, which is invalid Python syntax;
         # having a `pass` is a simple fix for this edge case.
 
-        meta_py_content += ['    pass']
+        meta_code += ['    pass']
 
 
 
         # Inject the meta-directive's Python snippet.
 
-        meta_py_content += ['']
+        meta_code += ['']
 
-        meta_directive.meta_py_line_number = len(meta_py_content) + 1
+        meta_directive.body_line_number = len(meta_code) + 1
 
-        meta_py_content += [
+        meta_code += [
             (' ' * (4 if line else 0)) + line
             for line in deindent(
                 '\n'.join(meta_directive.body_lines),
@@ -1500,185 +1488,52 @@ def do(*,
             ).splitlines()
         ]
 
-        meta_py_content += ['']
+
+
+        # Compile the meta-directive; this has to be done for each meta-directive individually
+        # rather than all together at once because a syntax error can "leak" across multiple
+        # meta-directives, to which it's then hard to identify where the exact source of the syntax error is.
+
+        try:
+            meta_directive.bytecode = compile(
+                '\n'.join(meta_code),
+                f'MetaDirective({meta_directive.source_file_path}:{meta_directive.meta_header_line_number})',
+                'exec'
+            )
 
 
 
-    meta_py_content = '\n'.join(meta_py_content) + '\n'
+        ################################################################################################################################
+        #
+        # Provide diagnostics for any syntax errors during compilation.
+        #
 
-
-
-    # Output the jumbo Python script for debuggability.
-
-    meta_py_file_path.parent.mkdir(parents = True, exist_ok = True)
-    meta_py_file_path.write_text(meta_py_content)
-
-
-
-    # Finally execute the meta-directives!
-
-    try:
-        exec(meta_py_content, { '__META_DECORATOR__' : __META_DECORATOR__, '__META_GLOBALS__' : {} }, {})
+        except err:
+            assert False
 
 
 
     ################################################################################################################################
     #
-    # Get the file paths, line numbers, and code to show for the diagnostic.
+    # We now finally execute the meta-directives.
     #
 
-    except Exception as err:
+    output_directory_path.mkdir(parents = True, exist_ok = True)
 
-        stacks = []
+    try:
 
-        match err:
+        globals = { '__META_DECORATOR__' : __META_DECORATOR__, '__META_GLOBALS__' : {} }
 
-            # Syntax errors are tricky;
-            # it's not possible to determine which meta-directive is causing the syntax error,
-            # because the error might be spilling across multiple meta-directives.
-            case builtins.SyntaxError() | builtins.IndentationError():
-                raise err from err
+        for meta_directive in meta_directives:
 
-            # Errors that happen outside of the execution of the meta-directive. TODO Questionable.
-            case meta_err if isinstance(meta_err, MetaError) and meta_err.undefined_exported_symbol is not None:
-                stacks += [types.SimpleNamespace(
-                    file_path   = root(err.source_file_path),
-                    line_number = err.meta_header_line_number,
-                    func_name   = '<meta-directive>',
-                )]
+            exec(meta_directive.bytecode, globals, {})
 
-            # Errors that happen during the execution of the meta-directive.
-            case _:
 
-                tbs = traceback.extract_tb(sys.exc_info()[2])
 
-                while tbs and tbs[0].name != '__META_DIRECTIVE__':
-                    del tbs[0] # We only care what happens after we begin executing the meta-directive's Python snippet.
+    ################################################################################################################################
+    #
+    # Provide diagnostics for any runtime exceptions during execution.
+    #
 
-                if not tbs:
-                    raise err from err
-
-                for tb in tbs:
-
-                    file_path   = tb.filename
-                    line_number = tb.lineno
-
-                    if file_path == '<string>':
-
-                        # This likely means the error happened when we executed `__meta__.py`,
-                        # so we adjust the reported file path and line number to be at the original meta-directive.
-
-                        err_dir = next(
-                            dir
-                            for dir in meta_directives
-                            if 0 <= (line_number - dir.meta_py_line_number) <= len(dir.body_lines)
-                        )
-
-                        file_path   = err_dir.source_file_path
-                        line_number = err_dir.meta_header_line_number + (line_number - err_dir.meta_py_line_number) + 1
-
-                    stacks += [types.SimpleNamespace(
-                        file_path   = root(file_path),
-                        line_number = line_number,
-                        func_name   = '<meta-directive>' if tb.name == '__META_DIRECTIVE__' else tb.name,
-                    )]
-
-        for stack in stacks:
-            stack.lines = [
-                (line_i + 1 - stack.line_number, line)
-                for line_i, line in enumerate(open(stack.file_path).read().splitlines())
-                if abs(line_i + 1 - stack.line_number) <= 4
-            ]
-
-        if err.args and isinstance(err.args[0], ErrorLift):
-            stacks = stacks[:-1]
-
-        if isinstance(err, MetaError) and not err.args and not err.undefined_exported_symbol: # Meta-directive logged the error.
-            raise MetaError() from err
-
-        #
-        # Log the diagnostics.
-        #
-
-        log()
-
-        line_number_just = max(0, *(len(str(stack.line_number + stack.lines[-1][0])) for stack in stacks))
-
-        for stack_i, stack in enumerate(stacks):
-
-            log(' ' * line_number_just + ' .')
-            log(' ' * line_number_just + ' . ', end = '')
-            log('.' * 150, ansi = 'fg_bright_black')
-            log(' ' * line_number_just + ' .')
-            log(' ' * line_number_just + ' |')
-
-            for line_delta, line in stack.lines:
-
-                line_number = stack.line_number + line_delta
-
-                with log(ansi = 'bold' if line_delta == 0 else None):
-
-                    log(
-                        f'{str(line_number).rjust(line_number_just)} |',
-                        end  = '',
-                    )
-                    log(
-                        f' {line}',
-                        ansi = 'bg_red' if line_delta == 0 else None,
-                        end  = '',
-                    )
-
-                    if line_delta == 0:
-                        log(f' <- {stack.file_path} : {line_number} : {stack.func_name}', ansi = 'fg_yellow', end = '')
-
-                    log()
-
-            log(' ' * line_number_just + ' |')
-
-        log()
-
-        with log(ansi = 'fg_red'):
-
-            match err:
-
-                case builtins.NameError():
-                    log(f'[ERROR] Name exception.')
-                    log(f'        > {str(err).removesuffix('.')}.') # TODO Better error message when NameError refers to an export.
-
-                case builtins.AttributeError():
-                    log(f'[ERROR] Attribute exception.')
-                    log(f'        > {str(err).removesuffix('.')}.')
-
-                case builtins.KeyError():
-                    log(f'[ERROR] Key exception.')
-                    log(f'        > {str(err)}.')
-
-                case builtins.ValueError():
-                    log(f'[ERROR] Value exception.')
-                    log(f'        > {str(err).removesuffix('.')}.')
-
-                case builtins.NotImplementedError():
-                    log(f'[ERROR] Unimplemented codepath exception.')
-                    log(f'        > {str(err).removesuffix('.')}.')
-
-                case builtins.RuntimeError():
-                    log(f'[ERROR] Runtime exception.')
-                    log(f'        > {str(err).removesuffix('.')}.')
-
-                case builtins.AssertionError():
-                    log(f'[ERROR] Assert exception.')
-                    if err.args:
-                        log(f'        > {err.args[0]}')
-
-                case MetaError():
-                    if err.undefined_exported_symbol is not None:
-                        log(f'[ERROR] Meta-directive did not define "{err.undefined_exported_symbol}".')
-                    else:
-                        log(f'[ERROR] Meta-preprocessor exception.')
-                        log(f'        > {str(err).removesuffix('.')}.')
-
-                case _:
-                    log(f'[ERROR] {type(err)}')
-                    log(f'        > {err}')
-
-        raise MetaError() from err
+    except err:
+        assert False

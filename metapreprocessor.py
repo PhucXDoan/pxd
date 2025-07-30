@@ -1189,7 +1189,7 @@ def do(*,
 
             # Finished processing this meta-directive.
 
-            meta_directives += [Obj(
+            meta_directives += [types.SimpleNamespace(
                 source_file_path              = source_file_path,
                 meta_header_line_number       = meta_header_line_number,
                 include_directive_file_path   = include_directive_file_path,
@@ -1198,7 +1198,6 @@ def do(*,
                 imports                       = imports,
                 global_exporter               = has_import_field and not imports,
                 body_lines                    = body_lines,
-                meta_py_line_number           = None,
             )]
 
 
@@ -1342,27 +1341,15 @@ def do(*,
     #
 
 
-    meta_directive_index = 0
+    current_meta_directive_index = 0
 
     def __META_DECORATOR__(meta_globals):
 
         def decorator(function):
 
-            nonlocal meta_directive_index
+            nonlocal current_meta_directive_index
 
-            info = {}
-
-            info['index'] = meta_directive_index
-            info['meta_directives'] = meta_directives
-            meta_directive_index += 1
-            info['source_file_path']              = meta_directives[info['index']].source_file_path
-            info['meta_header_line_number']       = meta_directives[info['index']].meta_header_line_number
-            info['include_directive_file_path']   = meta_directives[info['index']].include_directive_file_path
-            info['include_directive_line_number'] = meta_directives[info['index']].include_directive_line_number
-            info['exports']                       = meta_directives[info['index']].exports
-            info['imports']                       = meta_directives[info['index']].imports
-            info['meta_globals']                  = meta_globals
-            info = Record(info)
+            meta_directive = meta_directives[current_meta_directive_index]
 
             #
             # Start of callback.
@@ -1371,7 +1358,7 @@ def do(*,
             if callback is None:
                 callback_iterator = None
             else:
-                callback_iterator = callback(info)
+                callback_iterator = callback(current_meta_directive_index, meta_directives)
                 next(callback_iterator)
 
             #
@@ -1380,31 +1367,31 @@ def do(*,
 
             function_globals = {}
 
-            for symbol in info.imports:
+            for symbol in meta_directive.imports:
 
                 # We have to skip modules since they're not deepcopy-able.
-                if isinstance(info.meta_globals[symbol], types.ModuleType):
-                    function_globals[symbol] = info.meta_globals[symbol]
+                if isinstance(meta_globals[symbol], types.ModuleType):
+                    function_globals[symbol] = meta_globals[symbol]
 
                 # We deepcopy exported values so that if a meta-directive mutates it for some reason,
                 # it'll only be contained within that meta-directive; this isn't really necessary,
                 # but since meta-directives are evaluated mostly out-of-order, it helps keep the
                 # uncertainty factor lower.
                 else:
-                    function_globals[symbol] = copy.deepcopy(info.meta_globals[symbol])
+                    function_globals[symbol] = copy.deepcopy(meta_globals[symbol])
 
             # Meta is special in that it is the only global singleton. This is for meta-directives that
             # define functions that use Meta itself to generate code, and that function might be called
             # in a different meta-directive. They all need to refer to the same object, so one singleton
             # must be made for everyone to refer to. Still, checks are put in place to make Meta illegal
             # to use in meta-directives that do not have an associated #include.
-            function_globals['Meta'] = info.meta_globals['Meta']
+            function_globals['Meta'] = meta_globals['Meta']
 
             #
             # Execute the meta-directive.
             #
 
-            function_globals['Meta']._start(info.include_directive_file_path, info.source_file_path, info.include_directive_line_number)
+            function_globals['Meta']._start(meta_directive.include_directive_file_path, meta_directive.source_file_path, meta_directive.include_directive_line_number)
             types.FunctionType(function.__code__, function_globals)()
             function_globals['Meta']._end()
 
@@ -1412,16 +1399,16 @@ def do(*,
             # Copy the exported symbols into the collective namespace.
             #
 
-            for symbol in info.exports:
+            for symbol in meta_directive.exports:
 
                 if symbol not in function_globals:
                     raise MetaError(
                         undefined_exported_symbol = symbol,
-                        source_file_path          = info.source_file_path,
-                        meta_header_line_number   = info.meta_header_line_number,
+                        source_file_path          = meta_directive.source_file_path,
+                        meta_header_line_number   = meta_directive.meta_header_line_number,
                     )
 
-                info.meta_globals[symbol] = function_globals[symbol]
+                meta_globals[symbol] = function_globals[symbol]
 
             #
             # End of callback.
@@ -1438,6 +1425,8 @@ def do(*,
 
                 if not stopped:
                     raise RuntimeError('Callback did not return.')
+
+            current_meta_directive_index += 1
 
         return decorator
 

@@ -1493,7 +1493,11 @@ def do(*,
 
         meta_py_content += [
             (' ' * (4 if line else 0)) + line
-            for line in deindent('\n'.join(meta_directive.body_lines)).splitlines()
+            for line in deindent(
+                '\n'.join(meta_directive.body_lines),
+                multilined_string_literal = False,
+                single_line_comment       = '#'
+            ).splitlines()
         ]
 
         meta_py_content += ['']

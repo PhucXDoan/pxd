@@ -118,29 +118,79 @@ def ljusts(elems, include_keys = False):
 
 ################################################################################################################################
 
-def deindent(lines_or_a_string, *, remove_leading_newline = True, single_line_comment = None):
 
-    match lines_or_a_string:
-        case str() : lines = lines_or_a_string.splitlines()
-        case _     : lines = list(lines_or_a_string)
 
-    if remove_leading_newline and lines and lines[0].strip() == '':
+def deindent(string, *, multilined_string_literal = True, single_line_comment = None):
+
+
+
+    # For consistency, we preserve the newline style and whether or not the string ends with a newline.
+
+    lines = string.splitlines(keepends = True)
+
+
+
+    # By default, `deindent` will assume that `string` can be inputted like:
+    #
+    # >
+    # >    deindent('''
+    # >        ...
+    # >    ''')
+    # >
+    #
+    # This then means the first newline needs to be skipped.
+
+    if multilined_string_literal and lines and lines[0].strip() == '':
         del lines[0]
+
+
+
+    # Deindent each line of the string.
 
     global_indent = None
 
-    for line_i, line in enumerate(lines):
+    for line in lines:
+
+
+
+        # We currently only support space indentation.
+
+        if line.lstrip(' ').startswith('\t'):
+            raise ValueError(ErrorLift('Only spaces for indentation is allowed.'))
+
+
+
+        # Count the leading spaces.
 
         line_indent = len(line) - len(line.lstrip(' '))
 
-        if global_indent is None and line.strip() != '' and (single_line_comment is None or not line.strip().startswith(single_line_comment)):
+
+
+        # Comments shouldn't determine the indent level.
+
+        is_comment = single_line_comment is not None and line.strip().startswith(single_line_comment)
+
+
+
+        # Determine if this is the first line we've seen that should set the indentation for the whole string.
+
+        if global_indent is None and not is_comment and line.strip():
             global_indent = line_indent
 
-        lines[line_i] = line.removeprefix(' ' * min(line_indent, global_indent or 0))
 
-    match lines_or_a_string:
-        case str() : return '\n'.join(lines)
-        case _     : return lines
+
+    # Deindent each line.
+
+    if global_indent is not None:
+        lines = (line.split(' ', maxsplit = global_indent)[-1] for line in lines)
+
+
+
+    # Rejoining the lines while preserving the newlines.
+
+    return ''.join(lines)
+
+
 
 ################################################################################################################################
 

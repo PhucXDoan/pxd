@@ -15,15 +15,22 @@ def get_file_paths():
     # there's no easy way to do recursive `**` globs that's built-in. Sigh.
     #
 
-    citeignore = [
-        line.strip()
-        for line in open(root(f'./.citeignore')).read().splitlines()
-        if line.strip() and not line.strip().startswith('#')
-    ]
+    citeignore_file_path = root(f'./.citeignore')
+
+    if citeignore_file_path.is_file():
+
+        citeignore_entries = [
+            line.strip()
+            for line in citeignore_file_path.read_text().splitlines()
+            if line.strip() and not line.strip().startswith('#')
+        ]
+
+    else:
+        citeignore_entries = []
 
     def is_ignored(file_path):
 
-        for pattern in citeignore:
+        for pattern in citeignore_entries:
             if pattern.startswith('*.'):
                 if file_path.match(pattern):
                     return True

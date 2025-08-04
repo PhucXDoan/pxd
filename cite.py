@@ -97,131 +97,179 @@ def get_ledger():
 
 
 
-                # Routine to get the citation field contents.
+                # Get every citation field.
                 # e.g:
                 # >
                 # >    (AT)/pg 123/sec abc/`The Bible`.
-                # >            ^^^     ^^^
+                # >         ^^^^^^ ^^^^^^^
                 # >
 
-                def try_eat_field(field_name):
+                fields = {}
 
-                    nonlocal remainder
+                while True:
 
 
 
-                    # Check if the next thing is the prefixing field name.
+                    # See if we've reached the end of the field list.
                     # e.g:
                     # >
-                    # >    (AT)/pg 123/`The Bible`.
-                    # >         ^^
+                    # >    (AT)/pg 123/sec abc/`The Bible`.
+                    # >                        ^
                     # >
 
-                    if not remainder.startswith(field_name):
-                        return None
-
-                    remainder = remainder.removeprefix(field_name)
+                    if remainder.startswith('`'):
+                        break
 
 
 
-                    # We eat until we reach the end of the field.
+                    # Find the end of the field.
                     # e.g:
                     # >
-                    # >    (AT)/pg 123/`The Bible`.
-                    # >           ~~~~^
+                    # >    (AT)/pg 123/sec abc/`The Bible`.
+                    # >         ~~~~~~^
                     # >
 
-                    field_content, *remainder = remainder.split(delimiter := '/', 1)
+                    field, *remainder = remainder.split('/', 1)
 
                     if remainder == []:
-                        raise CitationIssue(f'Missing a "/" after the {field_name} field.')
+                        raise CitationIssue(f'Missing "/".')
 
                     remainder, = remainder
 
 
 
-                    # Ensure that the field name prefix wasn't actually a substring of something bigger;
-                    # otherwise, it might be a typo then.
+                    # Get the field name and content.
                     # e.g:
                     # >
-                    # >    (AT)/pg 123/`The Bible`.
-                    # >           ^ Okay.
-                    # >
-                    # >    (AT)/pgblahblah 123/`The Bible`.
-                    # >           ^ Bad.
-                    #
-                    # >    (AT)/pg123/`The Bible`.
-                    # >           ^ Bad.
+                    # >    (AT)/pg 123/sec abc/`The Bible`.
+                    # >         ^^ ^^^
                     # >
 
-                    if field_content and not field_content.startswith(' '):
-                        raise CitationIssue(f'Expected a space after the {field_name} field.')
+                    field_name, *field_content = field.split(' ', 1)
 
-                    field_content = field_content.strip()
+                    if field_content == []:
+                        raise CitationIssue(f'Missing value for field {field_name}.')
 
-                    return field_content
+                    field_content, = field_content
 
+                    if field_name in fields:
+                        raise CitationIssue(f'Duplicate field {field_name}.')
 
-
-                # Get page number.
-
-                if (pg := try_eat_field('pg')) is not None:
-
-                    if not all(c in string.digits for c in pg):
-                        raise CitationIssue(f'The "pg" field value can only contain digits 0-9; got "{pg}".')
-
-                    try:
-                        pg = int(pg)
-                    except ValueError as err:
-                        raise CitationIssue(f'Page number "{pg}" couldn\'t be parsed.')
+                    fields[field_name] = field_content
 
 
 
-                # Get listing.
+                # Validate and parse each field.
 
-                for listing_type in ('tbl', 'fig', 'sec'):
+                listing_type = None
+
+                for field_name, field_content in fields.items():
 
 
-                    if (listing_code := try_eat_field(listing_type)) is None:
-                        continue
 
-                    if not listing_code:
-                        raise CitationIssue(f'The "{listing_type}" field is empty.')
+                    # Ensure the correct usage of backticks.
 
-                    if not listing_code.startswith(tuple(string.ascii_letters + string.digits)):
-                        raise CitationIssue(
-                            f'The "{listing_type}" field value is "{listing_code}" '
-                            f'which doesn\'t start with an alphanumeric character; '
-                            f'this might be a typo?'
-                        )
+                    if '`' in field_content:
+                        raise CitationIssue(f'Backticks are not allowed in the value of field {field_name}.')
 
-                    if not listing_code.endswith(tuple(string.ascii_letters + string.digits)):
-                        raise CitationIssue(
-                            f'The "{listing_type}" field value is "{listing_code}" '
-                            f'which doesn\'t end with an alphanumeric character; '
-                            f'this might be a typo?'
-                        )
 
-                    if any(c in listing_code for c in string.whitespace):
-                        raise CitationIssue(
-                            f'The "{listing_type}" field value is "{listing_code}" '
-                            f'which has whitespace; '
-                            f'this might be a typo?'
-                        )
 
-                    allowable = string.ascii_letters + string.digits + '.-'
-                    if not all(c in allowable for c in listing_code):
-                        raise CitationIssue(
-                            f'The "{listing_type}" field value is "{listing_code}" '
-                            f'which has a character that\'s not typically found for such a field ({allowable}); '
-                            f'this might be a typo?'
-                        )
+                    # Handle the field contents based on the field name.
 
-                    break
+                    match field_name:
 
-                else:
-                    listing_type = None
-                    listing_code = None
+
+
+                        # Get the author.
+
+                        case 'by':
+
+                            if not field_content:
+                                raise CitationIssue(f'The "{field_name}" field is empty.')
+
+                            allowable = string.ascii_letters + string.digits + '- '
+                            if not all(c in allowable for c in field_content):
+                                raise CitationIssue(
+                                    f'The "{field_name}" field value is "{field_content}" '
+                                    f'which has a character that\'s not typically found for such a field ({allowable}); '
+                                    f'this might be a typo?'
+                                )
+
+
+
+                        # Get the date.
+
+                        case 'on':
+
+                            pass # TODO Validate.
+
+
+
+                        # Get the page number.
+
+                        case 'pg':
+
+                            if not all(character in string.digits for character in field_content):
+                                raise CitationIssue(f'The "pg" field value can only contain digits 0-9; got "{field_content}".')
+
+                            try:
+                                field_content = int(field_content)
+                            except ValueError as error:
+                                raise CitationIssue(f'Page number "{field_content}" couldn\'t be parsed.') from error
+
+
+
+                        # Get the listing code.
+
+                        case 'tbl' | 'fig' | 'sec':
+
+                            if listing_type is not None:
+                                raise CitationIssue(f'Multiple listing fields.')
+
+                            if not field_content:
+                                raise CitationIssue(f'The "{field_name}" field is empty.')
+
+                            if not field_content.startswith(tuple(string.ascii_letters + string.digits)):
+                                raise CitationIssue(
+                                    f'The "{field_name}" field value is "{field_content}" '
+                                    f'which doesn\'t start with an alphanumeric character; '
+                                    f'this might be a typo?'
+                                )
+
+                            if not field_content.endswith(tuple(string.ascii_letters + string.digits)):
+                                raise CitationIssue(
+                                    f'The "{field_name}" field value is "{field_content}" '
+                                    f'which doesn\'t end with an alphanumeric character; '
+                                    f'this might be a typo?'
+                                )
+
+                            if any(c in field_content for c in string.whitespace):
+                                raise CitationIssue(
+                                    f'The "{field_name}" field value is "{field_content}" '
+                                    f'which has whitespace; '
+                                    f'this might be a typo?'
+                                )
+
+                            allowable = string.ascii_letters + string.digits + '.-'
+                            if not all(c in allowable for c in field_content):
+                                raise CitationIssue(
+                                    f'The "{field_name}" field value is "{field_content}" '
+                                    f'which has a character that\'s not typically found for such a field ({allowable}); '
+                                    f'this might be a typo?'
+                                )
+
+
+
+                        # Unknown field.
+
+                        case _:
+                            raise CitationIssue(f'Unknown field {field_name}.')
+
+
+
+                    # Update field with the parsed contents.
+
+                    fields[field_name] = field_content
 
 
 
@@ -266,7 +314,7 @@ def get_ledger():
 
                 if remainder.strip().startswith(':'):
 
-                    if pg is not None:
+                    if fields.get('pg', None) is not None:
                         ledger.issues += [types.SimpleNamespace(
                             file_path = file_path,
                             line_num  = line_num,
@@ -303,9 +351,9 @@ def get_ledger():
                     ledger.citations += [types.SimpleNamespace(
                         file_path               = file_path,
                         line_num                = line_num,
-                        pg                      = pg,
+                        pg                      = fields.get('pg', None),
                         listing_type            = listing_type,
-                        listing_code            = listing_code,
+                        listing_code            = fields[listing_type] if listing_type is not None else None,
                         source_type             = source_type,
                         source_name             = source_name,
                         source_name_start_index = source_name_start_index,
@@ -314,11 +362,11 @@ def get_ledger():
                         line                    = line,
                     )]
 
-            except CitationIssue as err:
+            except CitationIssue as error:
                 ledger.issues += [types.SimpleNamespace(
                     file_path = file_path,
                     line_num  = line_num,
-                    reason    = str(err),
+                    reason    = str(error),
                 )]
 
 

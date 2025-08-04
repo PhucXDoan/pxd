@@ -52,22 +52,14 @@ def get_file_paths():
 
 
 ################################################################################################################################
+#
+# Find every citation.
+#
 
-
-
-def get_ledger():
-
-
-
-    # Find the citations and sources.
-
-    ledger = types.SimpleNamespace(
-        issues    = [],
-    )
-
-
+def get_citations():
 
     citations = []
+    issues    = []
 
     for file_path in get_file_paths():
 
@@ -76,21 +68,21 @@ def get_ledger():
         # Some stuff might be binary, so we'll skip over it when we can't read it properly.
 
         try:
-            file_content = open(file_path).read()
+            lines = file_path.read_text().splitlines()
         except UnicodeDecodeError:
             continue
 
 
 
-        # Find every citation tag and attempt to parse.
+        # Look for the citation tags.
 
-        class CitationIssue(Exception):
+        class Issue(Exception):
             pass
 
         for line_num, line, start_index in (
-            (line_i + 1, line, iter.start())
-            for line_i, line in enumerate(file_content.splitlines())
-            for iter in re.finditer(CITATION_TAG, line)
+            (line_i + 1, line, match.start())
+            for line_i, line in enumerate(lines)
+            for match in re.finditer(CITATION_TAG, line)
         ):
 
             try:
@@ -153,19 +145,20 @@ def get_ledger():
                         # e.g:
                         # >
                         # >    (AT)/pg 123/sec abc/url:`www.google.com`.
-                        # >                             ^^^^^^^^^^^^^^
+                        # >                             ^~~~~~~~~~~~~^
                         # >
 
                         start                            = len(line) - len(remainder)
                         citation.source_name, *remainder = remainder.split('`', 1)
                         end                              = start + len(citation.source_name)
-                        citation.source_name_span        = (start, end)
 
                         if remainder == []:
-                            raise CitationIssue(f'Missing a "`" after the name of the source.')
+                            raise Issue(f'Missing a "`" after the name of the source.')
 
-                        remainder,  = remainder
-                        citation.source_name = citation.source_name.strip()
+                        remainder, = remainder
+
+                        citation.source_name      = citation.source_name.strip()
+                        citation.source_name_span = (start, end)
 
                         break
 
@@ -187,7 +180,7 @@ def get_ledger():
                     field, *remainder = remainder.split('/', 1)
 
                     if remainder == []:
-                        raise CitationIssue(f'Missing "/".')
+                        raise Issue(f'Missing "/".')
 
                     remainder, = remainder
 
@@ -203,20 +196,46 @@ def get_ledger():
                     field_name, *field_content = field.split(' ', 1)
 
                     if field_content == []:
-                        raise CitationIssue(f'Missing value for field {field_name}.')
+                        raise Issue(f'Missing value for field {field_name}.')
 
                     field_content, = field_content
 
                     if field_name in citation.fields:
-                        raise CitationIssue(f'Duplicate field {field_name}.')
+                        raise Issue(f'Duplicate field {field_name}.')
 
                     citation.fields[field_name] = field_content
 
 
 
+                # We have now scanned through the entire citation.
+                # e.g:
+                # >
+                # >    (AT)/by Phuc Doan/on 2025-july-7/pg 13/sec abc/`The Bible`.
+                # >    ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^
+                # >
+
+                citation.text = line[start_index : len(line) - len(remainder)]
+
+
+
+                # If a colon is next, then the citation is a source definition;
+                # otherwise, it's a reference to a source.
+                # e.g:
+                # >
+                # >    The user guide states that we need to do X, Y, and Z. (AT)/`RSX`.
+                # >                                                          ^^^^^^^^^^ Citation that's a reference.
+                # >
+                # >    (AT)/`RSX`: RockSat-X User Guide (August 31, 2023) (Rev-Draft).
+                # >              ^ Citation that's a source definition.
+                # >
+
+                citation.definition = remainder.strip().startswith(':')
+
+
+
                 # Validate and parse each field.
 
-                citation.listing_type = None
+                citation.listing = None
 
                 for field_name, field_content in citation.fields.items():
 
@@ -225,15 +244,20 @@ def get_ledger():
 
 
                         # Get the author.
+                        # e.g:
+                        # >
+                        # >    (AT)/by Phuc Doan/on 2025-july-7/pg 13/sec abc/`The Bible`.
+                        # >            ^^^^^^^^^
+                        # >
 
                         case 'by':
 
                             if not field_content:
-                                raise CitationIssue(f'The "{field_name}" field is empty.')
+                                raise Issue(f'The "{field_name}" field is empty.')
 
                             allowable = string.ascii_letters + string.digits + '- '
                             if not all(c in allowable for c in field_content):
-                                raise CitationIssue(
+                                raise Issue(
                                     f'The "{field_name}" field value is "{field_content}" '
                                     f'which has a character that\'s not typically found for such a field ({allowable}); '
                                     f'this might be a typo?'
@@ -242,6 +266,11 @@ def get_ledger():
 
 
                         # Get the date.
+                        # e.g:
+                        # >
+                        # >    (AT)/by Phuc Doan/on 2025-july-7/pg 13/sec abc/`The Bible`.
+                        # >                         ^^^^ ^^^^ ^
+                        # >
 
                         case 'on':
 
@@ -250,47 +279,57 @@ def get_ledger():
 
 
                         # Get the page number.
+                        # e.g:
+                        # >
+                        # >    (AT)/by Phuc Doan/on 2025-july-7/pg 13/sec abc/`The Bible`.
+                        # >                                        ^^
+                        # >
 
                         case 'pg':
 
                             if not all(character in string.digits for character in field_content):
-                                raise CitationIssue(f'The "pg" field value can only contain digits 0-9; got "{field_content}".')
+                                raise Issue(f'The "pg" field value can only contain digits 0-9; got "{field_content}".')
 
                             try:
                                 field_content = int(field_content)
                             except ValueError as error:
-                                raise CitationIssue(f'Page number "{field_content}" couldn\'t be parsed.') from error
+                                raise Issue(f'Page number "{field_content}" couldn\'t be parsed.') from error
 
 
 
-                        # Get the listing code.
+                        # Get the listing.
+                        # e.g:
+                        # >
+                        # >    (AT)/by Phuc Doan/on 2025-july-7/pg 13/sec abc/`The Bible`.
+                        # >                                               ^^^
+                        # >
 
                         case 'tbl' | 'fig' | 'sec':
 
-                            if citation.listing_type is not None:
-                                raise CitationIssue(f'Multiple listing fields.')
+                            if citation.listing is not None:
+                                raise Issue(f'Multiple listing fields.')
 
-                            citation.listing_type = field_name
+                            citation.listing = field_name
 
                             if not field_content:
-                                raise CitationIssue(f'The "{field_name}" field is empty.')
+                                raise Issue(f'The "{field_name}" field is empty.')
 
                             if not field_content.startswith(tuple(string.ascii_letters + string.digits)):
-                                raise CitationIssue(
+                                raise Issue(
                                     f'The "{field_name}" field value is "{field_content}" '
                                     f'which doesn\'t start with an alphanumeric character; '
                                     f'this might be a typo?'
                                 )
 
                             if not field_content.endswith(tuple(string.ascii_letters + string.digits)):
-                                raise CitationIssue(
+                                raise Issue(
                                     f'The "{field_name}" field value is "{field_content}" '
                                     f'which doesn\'t end with an alphanumeric character; '
                                     f'this might be a typo?'
                                 )
 
                             if any(c in field_content for c in string.whitespace):
-                                raise CitationIssue(
+                                raise Issue(
                                     f'The "{field_name}" field value is "{field_content}" '
                                     f'which has whitespace; '
                                     f'this might be a typo?'
@@ -298,7 +337,7 @@ def get_ledger():
 
                             allowable = string.ascii_letters + string.digits + '.-'
                             if not all(c in allowable for c in field_content):
-                                raise CitationIssue(
+                                raise Issue(
                                     f'The "{field_name}" field value is "{field_content}" '
                                     f'which has a character that\'s not typically found for such a field ({allowable}); '
                                     f'this might be a typo?'
@@ -309,7 +348,7 @@ def get_ledger():
                         # Unknown field.
 
                         case _:
-                            raise CitationIssue(f'Unknown field {field_name}.')
+                            raise Issue(f'Unknown field {field_name}.')
 
 
 
@@ -317,61 +356,60 @@ def get_ledger():
 
                     citation.fields[field_name] = field_content
 
-                citation.text = line[start_index : len(line) - len(remainder)]
 
-
-
-                # If a colon immediately follows, then it's a source definition; otherwise, it's a proper citation.
-
-                citation.declaration = remainder.strip().startswith(':')
-
-                if citation.declaration:
-
-                    if citation.fields.get('pg', None) is not None:
-                        ledger.issues += [types.SimpleNamespace(
-                            file_path = file_path,
-                            line_num  = line_num,
-                            reason    = f'Source declaration shouldn\'t need to have a "pg" attribute.',
-                        )]
-
-                    if citation.listing_type is not None:
-                        ledger.issues += [types.SimpleNamespace(
-                            file_path = file_path,
-                            line_num  = line_num,
-                            reason    = f'Source declaration shouldn\'t need to have a "{listing_type}" attribute.',
-                        )]
-
-                    if citation.source_type is not None:
-                        ledger.issues += [types.SimpleNamespace(
-                            file_path = file_path,
-                            line_num  = line_num,
-                            reason    = f'Source declaration shouldn\'t need to have a source type.',
-                        )]
+                # Finished parsing a citation!
 
                 citations += [citation]
 
-            except CitationIssue as error:
-                ledger.issues += [types.SimpleNamespace(
+
+
+            # Some sort of irrecoverable issue was encountered while parsing the citation...
+
+            except Issue as error:
+                issues += [types.SimpleNamespace(
                     file_path = file_path,
                     line_num  = line_num,
                     reason    = str(error),
                 )]
 
 
-    ledger.citations = [citation for citation in citations if not citation.declaration]
-    ledger.sources   = coalesce((citation.source_name, citation) for citation in citations if citation.declaration)
-
-
 
     # Other consistency checks.
 
-    for source_name, source in ledger.sources.items():
+    for citation in citations:
+        if citation.definition:
+
+            if citation.fields.get('pg', None) is not None:
+                issues += [types.SimpleNamespace(
+                    file_path = file_path,
+                    line_num  = line_num,
+                    reason    = f'Source definition shouldn\'t need to have a "pg" attribute.',
+                )]
+
+            if citation.listing is not None:
+                issues += [types.SimpleNamespace(
+                    file_path = file_path,
+                    line_num  = line_num,
+                    reason    = f'Source definition shouldn\'t need to have a "{listing}" attribute.',
+                )]
+
+            if citation.source_type is not None:
+                issues += [types.SimpleNamespace(
+                    file_path = file_path,
+                    line_num  = line_num,
+                    reason    = f'Source definition shouldn\'t need to have a source type.',
+                )]
+
+    sources   = coalesce((citation.source_name, citation) for citation in citations if citation.definition)
+    citations = [citation for citation in citations if not citation.definition]
+
+    for source_name, source in sources.items():
 
         if len(source) >= 2:
 
             fst, *others = source
 
-            ledger.issues += [types.SimpleNamespace(
+            issues += [types.SimpleNamespace(
                 file_path = fst.file_path,
                 line_num  = fst.line_num,
                 reason    =
@@ -380,29 +418,29 @@ def get_ledger():
                     )}.'
             )]
 
-    for source in ledger.sources.values():
+    for source in sources.values():
 
         if len(source) >= 2:
             continue
 
         source, = source
 
-        if not any(citation.source_name == source.source_name for citation in ledger.citations):
-            ledger.issues += [types.SimpleNamespace(
+        if not any(citation.source_name == source.source_name for citation in citations):
+            issues += [types.SimpleNamespace(
                 file_path = source.file_path,
                 line_num  = source.line_num,
                 reason    = f'Source "{source.source_name}" is never used.',
             )]
 
-    for citation in ledger.citations:
-        if citation.source_type is None and citation.source_name not in ledger.sources:
-            ledger.issues += [types.SimpleNamespace(
+    for citation in citations:
+        if citation.source_type is None and citation.source_name not in sources:
+            issues += [types.SimpleNamespace(
                 file_path = citation.file_path,
                 line_num  = citation.line_num,
                 reason    = f'Citation uses undeclared source "{citation.source_name}".', # TODO difflib.
             )]
 
-    return ledger
+    return types.SimpleNamespace(citations = citations, sources = sources, issues = issues)
 
 
 
@@ -421,7 +459,7 @@ def find(
     rename               : ((str, 'flag') , 'Change the source name of all occurrences.'            ) = None,
 ):
 
-    ledger = get_ledger()
+    ledger = get_citations()
 
     if specific_source_name is None:
 
@@ -499,7 +537,7 @@ def find(
             'file_path' : citation.file_path,
             'line_num'  : citation.line_num,
             'pg'        : f'pg {citation.fields['pg']}' if 'pg' in citation.fields else '',
-            'listing'   : f'{citation.listing_type} {citation.fields[citation.listing_type]}' if citation.listing_type is not None else '',
+            'listing'   : f'{citation.listing} {citation.fields[citation.listing]}' if citation.listing is not None else '',
         } for citation_sub_index, citation in rows))
 
         for (citation_sub_index, citation), columns in rows:
@@ -641,7 +679,7 @@ def find(
 
                 file_path.write_text('\n'.join(file_lines) + '\n')
 
-            ledger = get_ledger()
+            ledger = get_citations()
 
             log(f'[NOTE]', end = '', ansi = ('bg_green', 'fg_black'))
             log(f' Renamed {len([instance for instances in occurrences.values() for instance in instances])} instances.')

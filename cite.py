@@ -97,6 +97,12 @@ def get_ledger():
 
                 remainder = line[start_index + len(CITATION_TAG):]
 
+                citation = types.SimpleNamespace(
+                    file_path = file_path,
+                    line_num  = line_num,
+                    line      = line,
+                )
+
 
 
                 # Get every citation field until we reach the source.
@@ -106,7 +112,7 @@ def get_ledger():
                 # >         ^^^^^^ ^^^^^^^ ^
                 # >
 
-                fields = {}
+                citation.fields = {}
 
                 while True:
 
@@ -125,9 +131,9 @@ def get_ledger():
                     # >                        ^
                     # >
 
-                    for source_type in (None, 'by', 'url'):
+                    for citation.source_type in (None, 'by', 'url'):
 
-                        if not remainder.startswith(prefix := '`' if source_type is None else f'{source_type}:`'):
+                        if not remainder.startswith(prefix := '`' if citation.source_type is None else f'{citation.source_type}:`'):
                             continue
 
                         remainder = remainder.removeprefix(prefix)
@@ -141,22 +147,22 @@ def get_ledger():
                         # >                             ^^^^^^^^^^^^^^
                         # >
 
-                        source_name_start_index = len(line) - len(remainder)
-                        source_name, *remainder = remainder.split('`', 1)
-                        source_name_end_index   = source_name_start_index + len(source_name)
+                        citation.source_name_start_index = len(line) - len(remainder)
+                        citation.source_name, *remainder = remainder.split('`', 1)
+                        citation.source_name_end_index   = citation.source_name_start_index + len(citation.source_name)
 
                         if remainder == []:
                             raise CitationIssue(f'Missing a "`" after the name of the source.')
 
                         remainder,  = remainder
-                        source_name = source_name.strip()
+                        citation.source_name = citation.source_name.strip()
 
                         break
 
                     else:
-                        source_type = ... # Haven't found the source yet.
+                        citation.source_type = ... # Haven't found the source yet.
 
-                    if source_type is not ...:
+                    if citation.source_type is not ...:
                         break
 
 
@@ -191,18 +197,18 @@ def get_ledger():
 
                     field_content, = field_content
 
-                    if field_name in fields:
+                    if field_name in citation.fields:
                         raise CitationIssue(f'Duplicate field {field_name}.')
 
-                    fields[field_name] = field_content
+                    citation.fields[field_name] = field_content
 
 
 
                 # Validate and parse each field.
 
-                listing_type = None
+                citation.listing_type = None
 
-                for field_name, field_content in fields.items():
+                for field_name, field_content in citation.fields.items():
 
                     match field_name:
 
@@ -251,10 +257,10 @@ def get_ledger():
 
                         case 'tbl' | 'fig' | 'sec':
 
-                            if listing_type is not None:
+                            if citation.listing_type is not None:
                                 raise CitationIssue(f'Multiple listing fields.')
 
-                            listing_type = field_name
+                            citation.listing_type = field_name
 
                             if not field_content:
                                 raise CitationIssue(f'The "{field_name}" field is empty.')
@@ -299,50 +305,38 @@ def get_ledger():
 
                     # Update field with the parsed contents.
 
-                    fields[field_name] = field_content
+                    citation.fields[field_name] = field_content
 
-                text = line[start_index : len(line) - len(remainder)]
+                citation.text = line[start_index : len(line) - len(remainder)]
 
 
 
                 # If a colon immediately follows, then it's a source definition; otherwise, it's a proper citation.
 
-                if declaration := remainder.strip().startswith(':'):
+                citation.declaration = remainder.strip().startswith(':')
 
-                    if fields.get('pg', None) is not None:
+                if citation.declaration:
+
+                    if citation.fields.get('pg', None) is not None:
                         ledger.issues += [types.SimpleNamespace(
                             file_path = file_path,
                             line_num  = line_num,
                             reason    = f'Source declaration shouldn\'t need to have a "pg" attribute.',
                         )]
 
-                    if listing_type is not None:
+                    if citation.listing_type is not None:
                         ledger.issues += [types.SimpleNamespace(
                             file_path = file_path,
                             line_num  = line_num,
                             reason    = f'Source declaration shouldn\'t need to have a "{listing_type}" attribute.',
                         )]
 
-                    if source_type is not None:
+                    if citation.source_type is not None:
                         ledger.issues += [types.SimpleNamespace(
                             file_path = file_path,
                             line_num  = line_num,
                             reason    = f'Source declaration shouldn\'t need to have a source type.',
                         )]
-
-                citation = types.SimpleNamespace(
-                    file_path               = file_path,
-                    line_num                = line_num,
-                    source_type             = source_type,
-                    source_name             = source_name,
-                    source_name_start_index = source_name_start_index,
-                    source_name_end_index   = source_name_end_index,
-                    line                    = line,
-                    text                    = text,
-                    fields                  = fields,
-                    listing_type            = listing_type,
-                    declaration             = declaration,
-                )
 
                 citations += [citation]
 

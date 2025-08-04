@@ -156,9 +156,10 @@ def get_ledger():
                         # >                             ^^^^^^^^^^^^^^
                         # >
 
-                        citation.source_name_start_index = len(line) - len(remainder)
+                        start                            = len(line) - len(remainder)
                         citation.source_name, *remainder = remainder.split('`', 1)
-                        citation.source_name_end_index   = citation.source_name_start_index + len(citation.source_name)
+                        end                              = start + len(citation.source_name)
+                        citation.source_name_span        = (start, end)
 
                         if remainder == []:
                             raise CitationIssue(f'Missing a "`" after the name of the source.')
@@ -554,19 +555,17 @@ def find(
             for src in source:
                 if src.source_name == specific_source_name:
                     occurrences[src.file_path] += [types.SimpleNamespace(
-                        line_num    = src.line_num,
-                        start_index = src.source_name_start_index,
-                        end_index   = src.source_name_end_index,
-                        line        = src.line,
+                        line_num = src.line_num,
+                        span     = src.source_name_span,
+                        line     = src.line,
                     )]
 
         for citation in ledger.citations:
             if citation.source_name == specific_source_name:
                 occurrences[citation.file_path] += [types.SimpleNamespace(
-                    line_num    = citation.line_num,
-                    start_index = citation.source_name_start_index,
-                    end_index   = citation.source_name_end_index,
-                    line        = citation.line,
+                    line_num = citation.line_num,
+                    span     = citation.source_name_span,
+                    line     = citation.line,
                 )]
 
         occurrences = dict(occurrences)
@@ -594,9 +593,9 @@ def find(
 
         for (file_path, instance), columns in rows:
             log('| {0} : {1} | '.format(*columns), end = '')
-            log(instance.line[                     : instance.start_index].lstrip(), end = '')
-            log(instance.line[instance.start_index : instance.end_index  ]         , end = '', ansi = ('fg_magenta', 'bold', 'underline'))
-            log(instance.line[instance.end_index   :                     ].rstrip(), end = '')
+            log(instance.line[                 : instance.span[0]].lstrip(), end = '')
+            log(instance.line[instance.span[0] : instance.span[1]]         , end = '', ansi = ('fg_magenta', 'bold', 'underline'))
+            log(instance.line[instance.span[1] :                 ].rstrip(), end = '')
             log()
 
         #
@@ -632,12 +631,12 @@ def find(
 
                 # Iterate through the citations on the line backwards
                 # so we can replace the source name properly.
-                for instance in sorted(instances, key = lambda instance: (instance.line_num, -instance.start_index)):
+                for instance in sorted(instances, key = lambda instance: (instance.line_num, -instance.span[0])):
 
                     file_lines[instance.line_num - 1] = (
-                        file_lines[instance.line_num - 1][:instance.start_index] +
+                        file_lines[instance.line_num - 1][:instance.span[0]] +
                         rename +
-                        file_lines[instance.line_num - 1][instance.end_index:]
+                        file_lines[instance.line_num - 1][instance.span[1]:]
                     )
 
                 file_path.write_text('\n'.join(file_lines) + '\n')

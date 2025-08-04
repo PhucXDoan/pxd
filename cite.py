@@ -62,10 +62,12 @@ def get_ledger():
     # Find the citations and sources.
 
     ledger = types.SimpleNamespace(
-        citations = [],
-        sources   = collections.defaultdict(lambda: []),
         issues    = [],
     )
+
+
+
+    citations = []
 
     for file_path in get_file_paths():
 
@@ -252,6 +254,8 @@ def get_ledger():
                             if listing_type is not None:
                                 raise CitationIssue(f'Multiple listing fields.')
 
+                            listing_type = field_name
+
                             if not field_content:
                                 raise CitationIssue(f'The "{field_name}" field is empty.')
 
@@ -303,7 +307,7 @@ def get_ledger():
 
                 # If a colon immediately follows, then it's a source definition; otherwise, it's a proper citation.
 
-                if remainder.strip().startswith(':'):
+                if declaration := remainder.strip().startswith(':'):
 
                     if fields.get('pg', None) is not None:
                         ledger.issues += [types.SimpleNamespace(
@@ -326,32 +330,21 @@ def get_ledger():
                             reason    = f'Source declaration shouldn\'t need to have a source type.',
                         )]
 
-                    ledger.sources[source_name] += [types.SimpleNamespace(
-                        file_path        = file_path,
-                        line_num         = line_num,
-                        name             = source_name,
-                        name_start_index = source_name_start_index,
-                        name_end_index   = source_name_end_index,
-                        text             = text,
-                        line             = line,
-                        duplicated       = False,
-                    )]
+                citation = types.SimpleNamespace(
+                    file_path               = file_path,
+                    line_num                = line_num,
+                    source_type             = source_type,
+                    source_name             = source_name,
+                    source_name_start_index = source_name_start_index,
+                    source_name_end_index   = source_name_end_index,
+                    line                    = line,
+                    text                    = text,
+                    fields                  = fields,
+                    listing_type            = listing_type,
+                    declaration             = declaration,
+                )
 
-                else:
-
-                    ledger.citations += [types.SimpleNamespace(
-                        file_path               = file_path,
-                        line_num                = line_num,
-                        pg                      = fields.get('pg', None),
-                        listing_type            = listing_type,
-                        listing_code            = fields[listing_type] if listing_type is not None else None,
-                        source_type             = source_type,
-                        source_name             = source_name,
-                        source_name_start_index = source_name_start_index,
-                        source_name_end_index   = source_name_end_index,
-                        text                    = text,
-                        line                    = line,
-                    )]
+                citations += [citation]
 
             except CitationIssue as error:
                 ledger.issues += [types.SimpleNamespace(
@@ -359,6 +352,10 @@ def get_ledger():
                     line_num  = line_num,
                     reason    = str(error),
                 )]
+
+
+    ledger.citations = [citation for citation in citations if not citation.declaration]
+    ledger.sources   = coalesce((citation.source_name, citation) for citation in citations if citation.declaration)
 
 
 
@@ -386,11 +383,11 @@ def get_ledger():
 
         source, = source
 
-        if not any(citation.source_name == source.name for citation in ledger.citations):
+        if not any(citation.source_name == source.source_name for citation in ledger.citations):
             ledger.issues += [types.SimpleNamespace(
                 file_path = source.file_path,
                 line_num  = source.line_num,
-                reason    = f'Source "{source.name}" is never used.',
+                reason    = f'Source "{source.source_name}" is never used.',
             )]
 
     for citation in ledger.citations:
@@ -482,7 +479,7 @@ def find(
             return ordering
 
         def citation_sorting(citation):
-            return citation.pg if citation.pg is not None else 0
+            return citation.fields.get('pg', 0)
 
         #
         # Dump the results.
@@ -497,8 +494,8 @@ def find(
         rows = zip(rows, ljusts({
             'file_path' : citation.file_path,
             'line_num'  : citation.line_num,
-            'pg'        : '' if citation.pg           is None else f'pg {citation.pg}' ,
-            'listing'   : '' if citation.listing_type is None else f'{citation.listing_type} {citation.listing_code}',
+            'pg'        : f'pg {citation.fields['pg']}' if 'pg' in citation.fields else '',
+            'listing'   : f'{citation.listing_type} {citation.fields[citation.listing_type]}' if citation.listing_type is not None else '',
         } for citation_sub_index, citation in rows))
 
         for (citation_sub_index, citation), columns in rows:
@@ -552,11 +549,11 @@ def find(
 
         for source in ledger.sources.values():
             for src in source:
-                if src.name == specific_source_name:
+                if src.source_name == specific_source_name:
                     occurrences[src.file_path] += [types.SimpleNamespace(
                         line_num    = src.line_num,
-                        start_index = src.name_start_index,
-                        end_index   = src.name_end_index,
+                        start_index = src.source_name_start_index,
+                        end_index   = src.source_name_end_index,
                         line        = src.line,
                     )]
 

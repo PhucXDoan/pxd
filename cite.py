@@ -97,11 +97,11 @@ def get_ledger():
 
 
 
-                # Get every citation field.
+                # Get every citation field until we reach the source.
                 # e.g:
                 # >
                 # >    (AT)/pg 123/sec abc/`The Bible`.
-                # >         ^^^^^^ ^^^^^^^
+                # >         ^^^^^^ ^^^^^^^ ^
                 # >
 
                 fields = {}
@@ -110,14 +110,51 @@ def get_ledger():
 
 
 
-                    # See if we've reached the end of the field list.
+                    # See if we've found the source type and name.
                     # e.g:
                     # >
                     # >    (AT)/pg 123/sec abc/`The Bible`.
                     # >                        ^
                     # >
+                    # >    (AT)/pg 123/sec abc/by:`Phuc Doan`.
+                    # >                        ^
+                    # >
+                    # >    (AT)/pg 123/sec abc/url:`www.google.com`.
+                    # >                        ^
+                    # >
 
-                    if remainder.startswith('`'):
+                    for source_type in (None, 'by', 'url'):
+
+                        if not remainder.startswith(prefix := '`' if source_type is None else f'{source_type}:`'):
+                            continue
+
+                        remainder = remainder.removeprefix(prefix)
+
+
+
+                        # Get the source name.
+                        # e.g:
+                        # >
+                        # >    (AT)/pg 123/sec abc/url:`www.google.com`.
+                        # >                             ^^^^^^^^^^^^^^
+                        # >
+
+                        source_name_start_index = len(line) - len(remainder)
+                        source_name, *remainder = remainder.split('`', 1)
+                        source_name_end_index   = source_name_start_index + len(source_name)
+
+                        if remainder == []:
+                            raise CitationIssue(f'Missing a "`" after the name of the source.')
+
+                        remainder,  = remainder
+                        source_name = source_name.strip()
+
+                        break
+
+                    else:
+                        source_type = ... # Haven't found the source yet.
+
+                    if source_type is not ...:
                         break
 
 
@@ -164,17 +201,6 @@ def get_ledger():
                 listing_type = None
 
                 for field_name, field_content in fields.items():
-
-
-
-                    # Ensure the correct usage of backticks.
-
-                    if '`' in field_content:
-                        raise CitationIssue(f'Backticks are not allowed in the value of field {field_name}.')
-
-
-
-                    # Handle the field contents based on the field name.
 
                     match field_name:
 
@@ -271,46 +297,11 @@ def get_ledger():
 
                     fields[field_name] = field_content
 
-
-
-                # Get reference type, if specified.
-
-                for source_type in ('url', 'by'):
-                    if remainder.startswith(substr := f'{source_type}:'):
-                        remainder   = remainder.removeprefix(substr)
-                        source_type = source_type
-                        break
-                else:
-                    source_type = None
-
-
-
-                # Get reference code.
-
-                if not remainder.startswith(substr := '`'):
-                    raise CitationIssue(
-                        f'Expected a "`" for the name of the source; '
-                        f'please double-check the overall syntax of the citation.'
-                    )
-
-                remainder               = remainder.removeprefix(substr)
-                source_name_start_index = len(line) - len(remainder)
-                source_name, *remainder = remainder.split('`', 1)
-                source_name_end_index   = source_name_start_index + len(source_name)
-                remainder,              = remainder if remainder else (None,)
-                source_name             = source_name.strip()
-
-                if remainder is None:
-                    raise CitationIssue(f'Missing a "`" after the name of the source.')
-
-                if not source_name:
-                    raise CitationIssue(f'Source name is empty.')
+                text = line[start_index : len(line) - len(remainder)]
 
 
 
                 # If a colon immediately follows, then it's a source definition; otherwise, it's a proper citation.
-
-                text = line[start_index : len(line) - len(remainder)]
 
                 if remainder.strip().startswith(':'):
 

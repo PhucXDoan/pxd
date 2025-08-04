@@ -118,22 +118,31 @@ def get_ledger():
 
 
 
-                    # See if we've found the source type and name.
-                    # e.g:
-                    # >
-                    # >    (AT)/pg 123/sec abc/`The Bible`.
-                    # >                        ^
-                    # >
-                    # >    (AT)/pg 123/sec abc/by:`Phuc Doan`.
-                    # >                        ^
-                    # >
-                    # >    (AT)/pg 123/sec abc/url:`www.google.com`.
-                    # >                        ^
-                    # >
+                    # See if we've found the source.
 
                     for citation.source_type in (None, 'by', 'url'):
 
-                        if not remainder.startswith(prefix := '`' if citation.source_type is None else f'{citation.source_type}:`'):
+
+
+                        # Get the source type.
+                        # e.g:
+                        # >
+                        # >    (AT)/pg 123/sec abc/`The Bible`.
+                        # >                        ^
+                        # >
+                        # >    (AT)/pg 123/sec abc/by:`Phuc Doan`.
+                        # >                        ^
+                        # >
+                        # >    (AT)/pg 123/sec abc/url:`www.google.com`.
+                        # >                        ^
+                        # >
+
+                        if citation.source_type is None:
+                            prefix = '`'
+                        else:
+                            prefix = f'{citation.source_type}:`'
+
+                        if not remainder.startswith(prefix):
                             continue
 
                         remainder = remainder.removeprefix(prefix)

@@ -52,9 +52,8 @@ def get_file_paths():
 
 
 ################################################################################################################################
-#
-# Find every citation.
-#
+
+
 
 def get_citations():
 
@@ -79,7 +78,7 @@ def get_citations():
         class Issue(Exception):
             pass
 
-        for line_num, line, start_index in (
+        for line_num, line, column in (
             (line_i + 1, line, match.start())
             for line_i, line in enumerate(lines)
             for match in re.finditer(CITATION_TAG, line)
@@ -87,9 +86,8 @@ def get_citations():
 
             try:
 
-                remainder = line[start_index + len(CITATION_TAG):]
-
-                citation = types.SimpleNamespace(
+                remainder = line[column + len(CITATION_TAG):]
+                citation  = types.SimpleNamespace(
                     file_path = file_path,
                     line_num  = line_num,
                     line      = line,
@@ -210,11 +208,11 @@ def get_citations():
                 # We have now scanned through the entire citation.
                 # e.g:
                 # >
-                # >    (AT)/by Phuc Doan/on 2025-july-7/pg 13/sec abc/`The Bible`.
-                # >    ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^
+                # >    (AT)/by Phuc Doan/pg 13/sec abc/`The Bible`.
+                # >    ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^
                 # >
 
-                citation.text = line[start_index : len(line) - len(remainder)]
+                citation.text = line[column : len(line) - len(remainder)]
 
 
 
@@ -243,46 +241,11 @@ def get_citations():
 
 
 
-                        # Get the author.
-                        # e.g:
-                        # >
-                        # >    (AT)/by Phuc Doan/on 2025-july-7/pg 13/sec abc/`The Bible`.
-                        # >            ^^^^^^^^^
-                        # >
-
-                        case 'by':
-
-                            if not field_content:
-                                raise Issue(f'The "{field_name}" field is empty.')
-
-                            allowable = string.ascii_letters + string.digits + '- '
-                            if not all(c in allowable for c in field_content):
-                                raise Issue(
-                                    f'The "{field_name}" field value is "{field_content}" '
-                                    f'which has a character that\'s not typically found for such a field ({allowable}); '
-                                    f'this might be a typo?'
-                                )
-
-
-
-                        # Get the date.
-                        # e.g:
-                        # >
-                        # >    (AT)/by Phuc Doan/on 2025-july-7/pg 13/sec abc/`The Bible`.
-                        # >                         ^^^^ ^^^^ ^
-                        # >
-
-                        case 'on':
-
-                            pass # TODO Validate.
-
-
-
                         # Get the page number.
                         # e.g:
                         # >
-                        # >    (AT)/by Phuc Doan/on 2025-july-7/pg 13/sec abc/`The Bible`.
-                        # >                                        ^^
+                        # >    (AT)/by Phuc Doan/pg 13/sec abc/`The Bible`.
+                        # >                         ^^
                         # >
 
                         case 'pg':
@@ -300,8 +263,8 @@ def get_citations():
                         # Get the listing.
                         # e.g:
                         # >
-                        # >    (AT)/by Phuc Doan/on 2025-july-7/pg 13/sec abc/`The Bible`.
-                        # >                                               ^^^
+                        # >    (AT)/by Phuc Doan/pg 13/sec abc/`The Bible`.
+                        # >                                ^^^
                         # >
 
                         case 'tbl' | 'fig' | 'sec':
@@ -373,74 +336,10 @@ def get_citations():
                 )]
 
 
-
-    # Other consistency checks.
-
-    for citation in citations:
-        if citation.definition:
-
-            if citation.fields.get('pg', None) is not None:
-                issues += [types.SimpleNamespace(
-                    file_path = file_path,
-                    line_num  = line_num,
-                    reason    = f'Source definition shouldn\'t need to have a "pg" attribute.',
-                )]
-
-            if citation.listing is not None:
-                issues += [types.SimpleNamespace(
-                    file_path = file_path,
-                    line_num  = line_num,
-                    reason    = f'Source definition shouldn\'t need to have a "{listing}" attribute.',
-                )]
-
-            if citation.source_type is not None:
-                issues += [types.SimpleNamespace(
-                    file_path = file_path,
-                    line_num  = line_num,
-                    reason    = f'Source definition shouldn\'t need to have a source type.',
-                )]
-
     sources   = coalesce((citation.source_name, citation) for citation in citations if citation.definition)
     citations = [citation for citation in citations if not citation.definition]
 
-    for source_name, source in sources.items():
-
-        if len(source) >= 2:
-
-            fst, *others = source
-
-            issues += [types.SimpleNamespace(
-                file_path = fst.file_path,
-                line_num  = fst.line_num,
-                reason    =
-                    f'Source "{source_name}" is already defined at {' and '.join(
-                        f'[{other.file_path}:{other.line_num}]' for other in others
-                    )}.'
-            )]
-
-    for source in sources.values():
-
-        if len(source) >= 2:
-            continue
-
-        source, = source
-
-        if not any(citation.source_name == source.source_name for citation in citations):
-            issues += [types.SimpleNamespace(
-                file_path = source.file_path,
-                line_num  = source.line_num,
-                reason    = f'Source "{source.source_name}" is never used.',
-            )]
-
-    for citation in citations:
-        if citation.source_type is None and citation.source_name not in sources:
-            issues += [types.SimpleNamespace(
-                file_path = citation.file_path,
-                line_num  = citation.line_num,
-                reason    = f'Citation uses undeclared source "{citation.source_name}".', # TODO difflib.
-            )]
-
-    return types.SimpleNamespace(citations = citations, sources = sources, issues = issues)
+    return types.SimpleNamespace(sources = sources, citations = citations, issues = issues)
 
 
 

@@ -1,41 +1,55 @@
 import contextlib, difflib
 
-LOG_ANSI_PROPS = { prop : tuple(f'\x1B[{n}m' for n in ns) for prop, *ns in (
-    ('bold'             , 1  , 22),
-    ('underline'        , 4  , 24),
-    ('fg_black'         , 30 , 39),
-    ('fg_red'           , 31 , 39),
-    ('fg_green'         , 32 , 39),
-    ('fg_yellow'        , 33 , 39),
-    ('fg_blue'          , 34 , 39),
-    ('fg_magenta'       , 35 , 39),
-    ('fg_cyan'          , 36 , 39),
-    ('fg_white'         , 37 , 39),
-    ('bg_black'         , 40 , 49),
-    ('bg_red'           , 41 , 49),
-    ('bg_green'         , 42 , 49),
-    ('bg_yellow'        , 43 , 49),
-    ('bg_blue'          , 44 , 49),
-    ('bg_magenta'       , 45 , 49),
-    ('bg_cyan'          , 46 , 49),
-    ('bg_white'         , 47 , 49),
-    ('fg_bright_black'  , 90 , 39),
-    ('fg_bright_red'    , 91 , 39),
-    ('fg_bright_green'  , 92 , 39),
-    ('fg_bright_yellow' , 93 , 39),
-    ('fg_bright_blue'   , 94 , 39),
-    ('fg_bright_magenta', 95 , 39),
-    ('fg_bright_cyan'   , 96 , 39),
-    ('fg_bright_white'  , 97 , 39),
-    ('bg_bright_black'  , 100, 49),
-    ('bg_bright_red'    , 101, 49),
-    ('bg_bright_green'  , 102, 49),
-    ('bg_bright_yellow' , 103, 49),
-    ('bg_bright_blue'   , 104, 49),
-    ('bg_bright_magenta', 105, 49),
-    ('bg_bright_cyan'   , 106, 49),
-    ('bg_bright_white'  , 107, 49),
-) }
+
+
+################################################################################################################################
+
+
+
+ANSI_PROPERTIES = {
+    property : tuple(f'\x1B[{code}m' for code in (enable, disable))
+    for enable, disable, *properties in (
+        (1  , 22, 'bold'                               ),
+        (4  , 24, 'underline'                          ),
+        (30 , 39, 'fg_black'         , 'black'         ),
+        (31 , 39, 'fg_red'           , 'red'           ),
+        (32 , 39, 'fg_green'         , 'green'         ),
+        (33 , 39, 'fg_yellow'        , 'yellow'        ),
+        (34 , 39, 'fg_blue'          , 'blue'          ),
+        (35 , 39, 'fg_magenta'       , 'magenta'       ),
+        (36 , 39, 'fg_cyan'          , 'cyan'          ),
+        (37 , 39, 'fg_white'         , 'white'         ),
+        (40 , 49, 'bg_black'                           ),
+        (41 , 49, 'bg_red'                             ),
+        (42 , 49, 'bg_green'                           ),
+        (43 , 49, 'bg_yellow'                          ),
+        (44 , 49, 'bg_blue'                            ),
+        (45 , 49, 'bg_magenta'                         ),
+        (46 , 49, 'bg_cyan'                            ),
+        (47 , 49, 'bg_white'                           ),
+        (90 , 39, 'fg_bright_black'  , 'bright_black'  ),
+        (91 , 39, 'fg_bright_red'    , 'bright_red'    ),
+        (92 , 39, 'fg_bright_green'  , 'bright_green'  ),
+        (93 , 39, 'fg_bright_yellow' , 'bright_yellow' ),
+        (94 , 39, 'fg_bright_blue'   , 'bright_blue'   ),
+        (95 , 39, 'fg_bright_magenta', 'bright_magenta'),
+        (96 , 39, 'fg_bright_cyan'   , 'bright_cyan'   ),
+        (97 , 39, 'fg_bright_white'  , 'bright_white'  ),
+        (100, 49, 'bg_bright_black'                    ),
+        (101, 49, 'bg_bright_red'                      ),
+        (102, 49, 'bg_bright_green'                    ),
+        (103, 49, 'bg_bright_yellow'                   ),
+        (104, 49, 'bg_bright_blue'                     ),
+        (105, 49, 'bg_bright_magenta'                  ),
+        (106, 49, 'bg_bright_cyan'                     ),
+        (107, 49, 'bg_bright_white'                    ),
+    )
+    for property in properties # Some properties can go by more than one name.
+}
+
+
+
+################################################################################################################################
 
 log_indent        = 0
 log_starting_line = True
@@ -91,13 +105,13 @@ def log(*value, **configs):
 
             # Enable the new graphics properties and disable them at the end.
             for prop in ansi:
-                string  = LOG_ANSI_PROPS[prop][0] + string
-                string += LOG_ANSI_PROPS[prop][1]
+                string  = ANSI_PROPERTIES[prop][0] + string
+                string += ANSI_PROPERTIES[prop][1]
 
             # Reenable the graphics properties we had before, if there was any.
             if log_ansi_stack:
                 for prop in log_ansi_stack[-1]:
-                    string += LOG_ANSI_PROPS[prop][0]
+                    string += ANSI_PROPERTIES[prop][0]
 
         # Apply indent.
 
@@ -113,7 +127,7 @@ def log(*value, **configs):
                 indentation = f'\x1B[0m' + indentation
                 for props in log_ansi_stack:
                     for prop in props:
-                        indentation += LOG_ANSI_PROPS[prop][0]
+                        indentation += ANSI_PROPERTIES[prop][0]
 
             string = indentation + string
 
@@ -144,7 +158,7 @@ def log(*value, **configs):
             if ansi is not None:
                 log_ansi_stack += [ansi]
                 for prop in log_ansi_stack[-1]:
-                    print(LOG_ANSI_PROPS[prop][0], end = '')
+                    print(ANSI_PROPERTIES[prop][0], end = '')
 
             # Increase indent.
             if indent:
@@ -162,14 +176,14 @@ def log(*value, **configs):
 
                 # Undo the latest graphics configuration.
                 for prop in log_ansi_stack[-1]:
-                    print(LOG_ANSI_PROPS[prop][1], end = '')
+                    print(ANSI_PROPERTIES[prop][1], end = '')
 
                 log_ansi_stack = log_ansi_stack[:-1]
 
                 # Reenable the old graphics configuraiton.
                 for props in log_ansi_stack:
                     for prop in props:
-                        print(LOG_ANSI_PROPS[prop][0], end = '')
+                        print(ANSI_PROPERTIES[prop][0], end = '')
 
         result = ctx()
 

@@ -64,6 +64,12 @@ def get_citations():
 
 
 
+        # Show the current file we're processing.
+
+        log(f'\x1B[2K\r{file_path}', end = '', ansi = 'fg_green');
+
+
+
         # Some stuff might be binary, so we'll skip over it when we can't read it properly.
 
         try:
@@ -495,6 +501,10 @@ def get_citations():
                 )]
 
 
+
+    # Clear the line where we were showing the current file we were processing.
+
+    log(f'\x1B[2K\r', end = '');
 
     return citations, issues
 

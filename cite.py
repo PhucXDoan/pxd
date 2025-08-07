@@ -125,17 +125,17 @@ def get_citations():
 
                         # Determine how the source name will be used.
                         # Some sources are "inlined", that is, they don't have a source definition, like for instance URLs.
-                        # Most citations reference a source that's not inlined however, so the source definition will be defined elsewhere.
+                        # Most citations, however, reference a source that'll be defined elsewhere.
                         # e.g:
                         # >
                         # >    (AT)/pg 123/sec abc/`The Bible`.
-                        # >                        ^ Not inlined.
+                        # >                        ^ Not inlined; defined else where.
                         # >
                         # >    (AT)/pg 123/sec abc/by:`Phuc Doan`.
-                        # >                        ^ Inlined.
+                        # >                        ^ Inlined; no source definition for `Phuc Doan` needed.
                         # >
                         # >    (AT)/pg 123/sec abc/url:`www.google.com`.
-                        # >                        ^ Inlined.
+                        # >                        ^ Inlined; no source definition for `www.google.com` needed.
                         # >
 
                         if citation.source_usage is None:
@@ -168,6 +168,9 @@ def get_citations():
 
                         citation.source_name         = citation.source_name.strip()
                         citation.source_name_columns = (start, end)
+
+                        if not citation.source_name:
+                            report_issue('Empty source name.')
 
                         break
 
@@ -361,19 +364,21 @@ def get_citations():
 
 
     # Organize the citations by source names and then the usage of the source.
-    # We also sort the citations so that it's trivial to print the citations out later on.
+    # This is how we determine if the sources are being used properly.
+    # We also sort it so the output will be nice.
 
-    database = collections.defaultdict(lambda: collections.defaultdict(lambda: []))
+    sources = collections.defaultdict(lambda: collections.defaultdict(lambda: []))
 
     def sorting(citation):
 
         try:
             pg = int(citation.fields.get('pg', 0))
         except ValueError:
-            pg = 0
+            pg = 0 # The page number field is actually malformed, but we'll silently treat it as a zero.
 
         return (
-            citation.source_name,
+            citation.source_name.lower(),
+            citation.source_usage == 'reference',
             pg,
             citation.listing or '',
             citation.fields.get(citation.listing, ''),
@@ -382,15 +387,42 @@ def get_citations():
         )
 
     for citation in sorted(citations, key = sorting):
-        database[citation.source_name][citation.source_usage] += [citation]
+        sources[citation.source_name][citation.source_usage] += [citation]
+
+    citations = [
+        citation
+        for source_usage_citations in sources.values()
+        for source_citations in source_usage_citations.values()
+        for citation in source_citations
+    ]
 
 
 
-    # Find issues between citations.
+    # Find additional issues.
 
-    for source_name, source_usage_citations in database.items():
+    for source_name, source_usage_citations in sources.items():
 
         match source_usage_citations:
+
+
+            # A source with a single definition and some citations that reference it.
+
+            case { 'definition': [definition], 'reference': [first, *others], **rest } if not rest:
+                pass # This is okay.
+
+
+
+            # Citations that are URLs.
+
+            case { 'url': urls, **rest } if not rest:
+                pass # This is okay.
+
+
+
+            # Citations that are authorized.
+
+            case { 'by': bys, **rest } if not rest:
+                pass # This is okay.
 
 
 
@@ -398,7 +430,7 @@ def get_citations():
 
             case { 'reference' : references, **rest } if not rest:
 
-                for reference in references:
+                for reference_i, reference in enumerate(references):
 
                     issues += [types.SimpleNamespace(
                         file_path   = reference.file_path,
@@ -433,20 +465,12 @@ def get_citations():
 
 
 
-            # A source with a single definition and some citations that reference it.
-
-            case { 'definition': [definition], 'reference': references, **rest } if not rest:
-
-                pass # No issues with this.
-
-
-
             # A source with conflicting usages.
             # e.g:
             # >
-            # >    (AT)/by:`google.com`.    <- Is "google.com" an author, a URL, or a source that's defined elsewhere?
-            # >    (AT)/url:`google.com`.   <- "
-            # >    (AT)/`google.com`.       <- "
+            # >    (AT)/by:`google.com`.  <- Is "google.com" an author, a URL, or a source that's defined elsewhere?
+            # >    (AT)/url:`google.com`. <- "
+            # >    (AT)/`google.com`.     <- "
             # >
 
             case _ if len(source_usage_citations) >= 2:
@@ -461,7 +485,18 @@ def get_citations():
 
 
 
-    return database, issues
+            # Unhandled case.
+
+            case _:
+                issues += [types.SimpleNamespace(
+                    file_path   = citation.file_path,
+                    line_number = citation.line_number,
+                    reason      = f'Source "{source_name}" with unhandled set of usages: {list(source_usage_citations.keys())}.',
+                )]
+
+
+
+    return citations, issues
 
 
 
@@ -469,282 +504,185 @@ def get_citations():
 
 
 
-def log_issues(issues):
-    for issue, ljust in zip(issues, ljusts((issue.file_path, issue.line_number) for issue in issues)):
-        log('[WARNING] {0} : {1} | {2}'.format(*ljust, issue.reason), ansi = 'fg_yellow')
+def log_citations(citations, issues):
+
+    if citations:
+
+        for citation, ljust in zip(citations, ljusts((citation.file_path, citation.line_number) for citation in citations)):
+
+            log('| {0} : {1} | '.format(*ljust), end = '')
 
 
+            match citation.source_usage:
+                case 'definition': source_color = 'bg_blue'
+                case 'reference' : source_color = 'fg_cyan'
+                case _           : source_color = 'fg_magenta'
 
-################################################################################################################################
-
-
-@ui('Find citations and source declarations that refer to a specific source name.')
-def find(
-    specific_source_name : (str          , 'Source name to search for; otherwise, list everything.') = None,
-    rename               : ((str, 'flag'), 'Change the source name of all occurrences.'            ) = None,
-):
-
-    database, issues = get_citations()
-
-
-
-    # We list every citation.
-
-    if specific_source_name is None:
-
-
-
-        # Renaming citation sources can't be done without first specifying the original.
-
-        if rename is not None:
-            ui.help(subcommand_name = 'find')
+            log(citation.line[                                : citation.source_name_columns[0]].lstrip(), end = '', ansi = 'fg_bright_black')
+            log(citation.line[citation.source_name_columns[0] : citation.source_name_columns[1]]         , end = '', ansi = (source_color, 'bold'))
+            log(citation.line[citation.source_name_columns[1] :                                ].rstrip(), end = '', ansi = 'fg_bright_black')
             log()
-            log(
-                f'[ERROR] A source name must be provided in order to do a renaming; '
-                f'see subcommand help above.',
-                ansi = 'fg_red'
-            )
-            return 1
-
-
-
-
-
-
-
-#        rows = []
-#
-#
-#        for source_name, source_usage_citations in database.items():
-#
-#            match source_usage_citations:
-#
-#
-#
-#                # A source with a single definition and some citations that reference it.
-#
-#                case { 'definition': [definition], 'reference': references, **rest } if not rest:
-#
-#                    
-#
-#
-#                case _:
-#                    pass
-
-
-
-
-
-
-
-
-#        rows = []
-#
-#        for source_name, (definitions, references) in database.items():
-#
-#            for reference_i, reference in enumerate(references):
-#
-#                row = {
-#                    'file_path'   : reference.file_path,
-#                    'line_number' : reference.line_number,
-#                    'pg'          : f'pg {reference.fields['pg']}' if 'pg' in reference.fields else '',
-#                    'listing'     : f'{reference.listing} {reference.fields[reference.listing]}' if reference.listing is not None else '',
-#                }
-#                definition_preview = ('', '', '')
-#
-#
-#                match definitions:
-#
-#
-#
-#                    # These citations do not 
-#
-#                    case []:
-#
-#                        if reference.type is None:
-#                            file_path   = '???'
-#                            line_number = '???'
-#                        else:
-#                            file_path   = reference.file_path
-#                            line_number = reference.line_number
-#
-#                        start = reference.source_name_columns[0] - reference.column
-#                        end   = reference.source_name_columns[1] - reference.column
-#
-#                        definition_preview = (
-#                            f' [{file_path}:{line_number}] {reference.text[:start]}',
-#                            reference.text[start:end],
-#                            reference.text[end:],
-#                        )
-#
-#
-#                    case [definition]:
-#
-#                        if reference_i == 0:
-#
-#                            start = definition.source_name_columns[0] - definition.column
-#                            end   = definition.source_name_columns[1] - definition.column
-#
-#                            definition_preview = (
-#                                f' [{definition.file_path}:{definition.line_number}] {definition.text[:start]}',
-#                                definition.text[start:end],
-#                                definition.text[end:],
-#                            )
-#
-#
-#
-#                    case definitions:
-#
-#                        if reference_i == 0:
-#
-#                            definition_preview = (
-#                                f' [???:???] {CITATION_TAG}/`',
-#                                source_name,
-#                                '`',
-#                            )
-#
-#                rows += [(row, definition_preview)]
-#
-#
-#        for ljust, definition_preview in zip(ljusts(row for row, definition_preview in rows), (definition_preview for row, definition_preview in rows)):
-#            log('| {file_path} : {line_number} | {pg} | {listing} |'.format(**ljust), end = '')
-#            log(definition_preview[0], end = '')
-#            log(definition_preview[1], end = '', ansi = ('fg_magenta', 'bold', 'underline'))
-#            log(definition_preview[2], end = '')
-#            log()
-
-
-        if issues:
-            log()
-            log_issues(issues)
 
     else:
 
-        #
-        # If we're renaming, do some basic checks.
-        #
+        log('No citations found.')
 
-        if rename is not None:
+    if issues:
 
-            rename = rename.strip()
+        with log(ansi = 'fg_yellow'):
 
-            if '`' in rename:
-                log(f'[ERROR] The new source name "{rename}" cannot have a backtick "`".', ansi = 'fg_red')
-                return 1
+            log()
+
+            for issue, ljust in zip(issues, ljusts((issue.file_path, issue.line_number) for issue in issues)):
+                log('[WARNING] {0} : {1} | {2}'.format(*ljust, issue.reason))
+
+
+
+################################################################################################################################
+
+
+
+@ui('Validate and list every citation.')
+def find(
+    specific_source_name : ( str         , 'Source name to filter by; otherwise, list everything.'      ) = None,
+    rename               : ((str, 'flag'), 'If given, replaces the sources of citations with a new one.') = None,
+):
+
+
+
+    # Some basic checks on parameters.
+
+    if rename is not None:
+
+        rename = rename.strip()
+
+        if specific_source_name is None:
+            log(f'[ERROR] In order rename citation sources, the old source name must be also given.', ansi = 'fg_red')
+            return 1
+
+        if '`' in rename:
+            log(f'[ERROR] The new source name "{rename}" cannot have a backtick (`).', ansi = 'fg_red')
+            return 1
 
         if rename == '':
             log(f'[ERROR] The source cannot be renamed to an empty string.', ansi = 'fg_red')
             return 1
 
         if rename == specific_source_name:
-            log(f'[WARNING] The new source name "{rename}" is the same as the old one; no renaming will be done.', ansi = 'fg_yellow')
+            log(f'The new source name "{rename}" is the same as the old one; no renaming will be done.')
             return 0
 
-        #
-        # Find all citations and source declaration instances that match the given name.
-        #
+    all_citations, issues = get_citations()
 
-        occurrences = collections.defaultdict(lambda: [])
 
-        for source in ledger.sources.values():
-            for src in source:
-                if src.source_name == specific_source_name:
-                    occurrences[src.file_path] += [types.SimpleNamespace(
-                        line_number = src.line_number,
-                        span     = src.source_name_span,
-                        line     = src.line,
-                    )]
 
-        for citation in ledger.citations:
-            if citation.source_name == specific_source_name:
-                occurrences[citation.file_path] += [types.SimpleNamespace(
-                    line_number = citation.line_number,
-                    span     = citation.source_name_span,
-                    line     = citation.line,
-                )]
+    # If the user only wants to look for citations of a specific source name,
+    # then filter down the list of citations.
 
-        occurrences = dict(occurrences)
+    if specific_source_name is not None:
 
-        if not occurrences:
-            did_you_mean(
-                f'No citations or source declarations associated with "{specific_source_name}" was found.',
-                specific_source_name,
-                { *ledger.sources, *[citation.source_name for citation in ledger.citations] },
-                ansi = 'fg_yellow',
-            )
-            return 0
-
-        #
-        # Show the findings.
-        #
-
-        rows = [
-            (file_path, instance)
-            for file_path, instances in occurrences.items()
-            for instance in instances
+        filtered_citations = [
+            citation
+            for citation in all_citations
+            if citation.source_name == specific_source_name
         ]
 
-        rows = zip(rows, ljusts((file_path, instance.line_number) for file_path, instance in rows))
 
-        for (file_path, instance), columns in rows:
-            log('| {0} : {1} | '.format(*columns), end = '')
-            log(instance.line[                 : instance.span[0]].lstrip(), end = '')
-            log(instance.line[instance.span[0] : instance.span[1]]         , end = '', ansi = ('fg_magenta', 'bold', 'underline'))
-            log(instance.line[instance.span[1] :                 ].rstrip(), end = '')
+
+        # If we end up filtering everything out,
+        # then show all of the citations and tell the user there's no citation by that source name.
+
+        if not filtered_citations:
+
+            log_citations(all_citations, issues)
             log()
+            did_you_mean(
+                f'No citations associated with "{specific_source_name}" was found.',
+                specific_source_name,
+                OrdSet(citation.source_name for citation in all_citations),
+            )
 
-        #
-        # Rename the sources if requested.
-        #
+            return 0 # I'm arbitrarily saying no error here.
 
-        if rename is not None:
 
-            if ledger.issues:
-                log()
-                log_issues(ledger.issues)
 
-            if (
-                any(source_name          == rename for source_name in ledger.sources  ) or
-                any(citation.source_name == rename for source_name in ledger.citations)
-            ):
-                if not ledger.issues:
-                    log()
-                log(f'[WARNING] The new source name "{rename}" is the name of an already existing source.', ansi = 'fg_yellow')
+    # No filtering done.
 
-            log()
-            log(f'[NOTE]', end = '', ansi = ('bg_green', 'fg_black'))
-            log(f' Enter "yes" to replace the source names with "{rename}" (otherwise, abort): ', end ='')
+    else:
 
-            if input() != 'yes':
-                log(f'[NOTE]', end = '', ansi = ('bg_green', 'fg_black'))
-                log(f' Aborted the renaming.')
-                return 1
+        filtered_citations = all_citations
 
-            for file_path, instances in occurrences.items():
 
-                file_lines = open(file_path).read().splitlines()
 
-                # Iterate through the citations on the line backwards
-                # so we can replace the source name properly.
-                for instance in sorted(instances, key = lambda instance: (instance.line_number, -instance.span[0])):
+    # Show the citations and issues if any.
 
-                    file_lines[instance.line_number - 1] = (
-                        file_lines[instance.line_number - 1][:instance.span[0]] +
-                        rename +
-                        file_lines[instance.line_number - 1][instance.span[1]:]
-                    )
+    log_citations(filtered_citations, issues)
 
-                file_path.write_text('\n'.join(file_lines) + '\n')
 
-            ledger = get_citations()
 
-            log(f'[NOTE]', end = '', ansi = ('bg_green', 'fg_black'))
-            log(f' Renamed {len([instance for instances in occurrences.values() for instance in instances])} instances.')
+    # Move onto the process of renaming, if requested.
 
-        #
-        # Report issues.
-        #
+    if rename is None:
+        return
 
-        if ledger.issues:
-            log()
-            log_issues(ledger.issues)
+    if any(citation.source_name == rename for citation in all_citations):
+        log(f'[WARNING] The new source name "{rename}" is the name of an already existing source.', ansi = 'fg_yellow')
+
+    log()
+    log(f'Enter "yes" to replace the source names with "{rename}"; otherwise abort: ', end ='')
+
+    try:
+        response = input()
+    except KeyboardInterrupt:
+        log()
+        response = None
+
+    if response != 'yes':
+        log(f'Aborted the renaming.')
+        return 1
+
+
+
+    # Actually perform the renaming operation now.
+
+    for file_path, file_citations in coalesce((citation.file_path, citation) for citation in filtered_citations).items():
+
+        file_lines = file_path.read_text().splitlines(keepends = True)
+
+
+
+        # Iterate through the citations on the line backwards so we can replace the source names properly.
+
+        for citation in sorted(file_citations, key = lambda citation: (citation.line_number, -citation.source_name_columns[0])):
+
+            file_lines[citation.line_number - 1] = (
+                file_lines[citation.line_number - 1][:citation.source_name_columns[0]] +
+                rename +
+                file_lines[citation.line_number - 1][citation.source_name_columns[1]:]
+            )
+
+
+
+        # Rejoin the file lines while preserving line-endings.
+
+        file_path.write_text(''.join(file_lines))
+
+
+
+    log(f'Renamed {len(filtered_citations)} citations.')
+
+
+
+    # Typically renames are useful for fixing citation issues,
+    # so we show the remaining issues that there may be.
+
+    new_citations, issues = get_citations()
+
+    new_citations = [
+        citation
+        for citation in new_citations
+        if citation.source_name == rename
+    ]
+
+    log()
+    log_citations(new_citations, issues)

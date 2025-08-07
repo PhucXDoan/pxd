@@ -73,24 +73,33 @@ def get_citations():
 
 
 
-        # Look for the citation tags.
+        # Look for the magic citation tags and try the parse the citations.
 
-        class Issue(Exception):
+        class ParsingIssue(Exception):
             pass
 
-        for line_num, line, column in (
+        for line_number, line, column in (
             (line_i + 1, line, match.start())
             for line_i, line in enumerate(lines)
             for match in re.finditer(CITATION_TAG, line)
         ):
 
+            def report_issue(reason):
+                nonlocal issues
+                issues += [types.SimpleNamespace(
+                    file_path   = file_path,
+                    line_number = line_number,
+                    reason      = reason,
+                )]
+
             try:
 
                 remainder = line[column + len(CITATION_TAG):]
                 citation  = types.SimpleNamespace(
-                    file_path = file_path,
-                    line_num  = line_num,
-                    line      = line,
+                    file_path   = file_path,
+                    line_number = line_number,
+                    column      = column,
+                    line        = line,
                 )
 
 
@@ -110,27 +119,29 @@ def get_citations():
 
                     # See if we've found the source.
 
-                    for citation.source_type in (None, 'by', 'url'):
+                    for citation.source_usage in (None, 'by', 'url'):
 
 
 
-                        # Get the source type.
+                        # Determine how the source name will be used.
+                        # Some sources are "inlined", that is, they don't have a source definition, like for instance URLs.
+                        # Most citations reference a source that's not inlined however, so the source definition will be defined elsewhere.
                         # e.g:
                         # >
                         # >    (AT)/pg 123/sec abc/`The Bible`.
-                        # >                        ^
+                        # >                        ^ Not inlined.
                         # >
                         # >    (AT)/pg 123/sec abc/by:`Phuc Doan`.
-                        # >                        ^
+                        # >                        ^ Inlined.
                         # >
                         # >    (AT)/pg 123/sec abc/url:`www.google.com`.
-                        # >                        ^
+                        # >                        ^ Inlined.
                         # >
 
-                        if citation.source_type is None:
+                        if citation.source_usage is None:
                             prefix = '`'
                         else:
-                            prefix = f'{citation.source_type}:`'
+                            prefix = f'{citation.source_usage}:`'
 
                         if not remainder.startswith(prefix):
                             continue
@@ -151,19 +162,19 @@ def get_citations():
                         end                              = start + len(citation.source_name)
 
                         if remainder == []:
-                            raise Issue(f'Missing a "`" after the name of the source.')
+                            raise ParsingIssue(f'Missing closing backtick (`) after source name.')
 
                         remainder, = remainder
 
-                        citation.source_name      = citation.source_name.strip()
-                        citation.source_name_span = (start, end)
+                        citation.source_name         = citation.source_name.strip()
+                        citation.source_name_columns = (start, end)
 
                         break
 
                     else:
-                        citation.source_type = ... # Haven't found the source yet.
+                        citation.source_usage = ... # Haven't found the source yet.
 
-                    if citation.source_type is not ...:
+                    if citation.source_usage is not ...:
                         break
 
 
@@ -177,8 +188,13 @@ def get_citations():
 
                     field, *remainder = remainder.split('/', 1)
 
+                    field = field.strip()
+
+                    if not field:
+                        raise ParsingIssue(f'Expected a field name.')
+
                     if remainder == []:
-                        raise Issue(f'Missing "/".')
+                        raise ParsingIssue(f'Expected a forward-slash (/).')
 
                     remainder, = remainder
 
@@ -194,12 +210,12 @@ def get_citations():
                     field_name, *field_content = field.split(' ', 1)
 
                     if field_content == []:
-                        raise Issue(f'Missing value for field {field_name}.')
+                        raise ParsingIssue(f'Field "{field_name}" given no value.')
 
                     field_content, = field_content
 
                     if field_name in citation.fields:
-                        raise Issue(f'Duplicate field {field_name}.')
+                        raise ParsingIssue(f'Field "{field_name}" specified more than once.')
 
                     citation.fields[field_name] = field_content
 
@@ -216,22 +232,7 @@ def get_citations():
 
 
 
-                # If a colon is next, then the citation is a source definition;
-                # otherwise, it's a reference to a source.
-                # e.g:
-                # >
-                # >    The user guide states that we need to do X, Y, and Z. (AT)/`RSX`.
-                # >                                                          ^^^^^^^^^^ Citation that's a reference.
-                # >
-                # >    (AT)/`RSX`: RockSat-X User Guide (August 31, 2023) (Rev-Draft).
-                # >              ^ Citation that's a source definition.
-                # >
-
-                citation.definition = remainder.strip().startswith(':')
-
-
-
-                # Validate and parse each field.
+                # Validate each field.
 
                 citation.listing = None
 
@@ -250,13 +251,23 @@ def get_citations():
 
                         case 'pg':
 
-                            if not all(character in string.digits for character in field_content):
-                                raise Issue(f'The "pg" field value can only contain digits 0-9; got "{field_content}".')
+                            if any(c in field_content for c in string.whitespace):
+                                report_issue(
+                                    f'Field "{field_name}" is "{field_content}" which has whitespace; '
+                                    f'probably a mistake?'
+                                )
 
-                            try:
-                                field_content = int(field_content)
-                            except ValueError as error:
-                                raise Issue(f'Page number "{field_content}" couldn\'t be parsed.') from error
+                            elif not all(character in string.digits for character in field_content):
+                                report_issue(
+                                    f'Field "{field_name}" is "{field_content}" which has characters other than digits 0-9; '
+                                    f'probably a mistake?'
+                                )
+
+                            elif field_content.startswith('0'):
+                                report_issue(
+                                    f'Field "{field_name}" is "{field_content}" which starts with digit 0; '
+                                    f'probably a mistake?'
+                                )
 
 
 
@@ -270,57 +281,73 @@ def get_citations():
                         case 'tbl' | 'fig' | 'sec':
 
                             if citation.listing is not None:
-                                raise Issue(f'Multiple listing fields.')
-
-                            citation.listing = field_name
-
-                            if not field_content:
-                                raise Issue(f'The "{field_name}" field is empty.')
-
-                            if not field_content.startswith(tuple(string.ascii_letters + string.digits)):
-                                raise Issue(
-                                    f'The "{field_name}" field value is "{field_content}" '
-                                    f'which doesn\'t start with an alphanumeric character; '
-                                    f'this might be a typo?'
+                                report_issue(
+                                    f'Fields "{citation.listing}" and "{field_name}" both given; '
+                                    f'only at most one listing field is needed.'
                                 )
 
-                            if not field_content.endswith(tuple(string.ascii_letters + string.digits)):
-                                raise Issue(
-                                    f'The "{field_name}" field value is "{field_content}" '
-                                    f'which doesn\'t end with an alphanumeric character; '
-                                    f'this might be a typo?'
-                                )
+                            else:
 
-                            if any(c in field_content for c in string.whitespace):
-                                raise Issue(
-                                    f'The "{field_name}" field value is "{field_content}" '
-                                    f'which has whitespace; '
-                                    f'this might be a typo?'
-                                )
+                                citation.listing = field_name
 
-                            allowable = string.ascii_letters + string.digits + '.-'
-                            if not all(c in allowable for c in field_content):
-                                raise Issue(
-                                    f'The "{field_name}" field value is "{field_content}" '
-                                    f'which has a character that\'s not typically found for such a field ({allowable}); '
-                                    f'this might be a typo?'
-                                )
+                                if not field_content.startswith(tuple(string.ascii_letters + string.digits)):
+                                    report_issue(
+                                        f'Field "{field_name}" is "{field_content}" which does not start with an alphanumeric character; '
+                                        f'probably a mistake?'
+                                    )
+
+                                elif not field_content.endswith(tuple(string.ascii_letters + string.digits)):
+                                    report_issue(
+                                        f'The "{field_name}" field value is "{field_content}" which does not end with an alphanumeric character; '
+                                        f'probably a mistake?'
+                                    )
+
+                                elif any(c in field_content for c in string.whitespace):
+                                    report_issue(
+                                        f'Field "{field_name}" is "{field_content}" which has whitespace; '
+                                        f'probably a mistake?'
+                                    )
+
+                                elif not all(c in string.ascii_letters + string.digits + '.-' for c in field_content):
+                                    report_issue(
+                                        f'Field "{field_name}" is "{field_content}" which has a character typically not associated with listing codes; '
+                                        f'probably a mistake?'
+                                    )
 
 
 
                         # Unknown field.
 
                         case _:
-                            raise Issue(f'Unknown field {field_name}.')
+                            report_issue(f'Field "{field_name}" is not supported.')
 
 
 
-                    # Update field with the parsed contents.
+                # If a colon is next, then the citation is actually a source definition;
+                # otherwise, it should be a reference to a source.
+                # e.g:
+                # >
+                # >    The user guide states that we need to do X, Y, and Z. (AT)/`RSX`.
+                # >                                                          ^^^^^^^^^^ Citation that's a reference.
+                # >
+                # >    (AT)/`RSX`: RockSat-X User Guide (August 31, 2023) (Rev-Draft).
+                # >              ^ Citation that's a source definition.
+                # >
 
-                    citation.fields[field_name] = field_content
+                if remainder.strip().startswith(':'):
+
+                    if citation.source_usage is not None:
+                        raise ParsingIssue(f'Citation cannot have a "{citation.source_usage}" source and also be a source definition.')
+
+                    citation.source_usage = 'definition'
+
+                    if citation.fields:
+                        report_issue(f'A source definition should not have fields.')
+
+                elif citation.source_usage is None:
+                    citation.source_usage = 'reference'
 
 
-                # Finished parsing a citation!
 
                 citations += [citation]
 
@@ -328,18 +355,113 @@ def get_citations():
 
             # Some sort of irrecoverable issue was encountered while parsing the citation...
 
-            except Issue as error:
+            except ParsingIssue as error:
+                report_issue(error.args[0])
+
+
+
+    # Organize the citations by source names and then the usage of the source.
+    # We also sort the citations so that it's trivial to print the citations out later on.
+
+    database = collections.defaultdict(lambda: collections.defaultdict(lambda: []))
+
+    def sorting(citation):
+
+        try:
+            pg = int(citation.fields.get('pg', 0))
+        except ValueError:
+            pg = 0
+
+        return (
+            citation.source_name,
+            pg,
+            citation.listing or '',
+            citation.fields.get(citation.listing, ''),
+            citation.file_path,
+            citation.line_number
+        )
+
+    for citation in sorted(citations, key = sorting):
+        database[citation.source_name][citation.source_usage] += [citation]
+
+
+
+    # Find issues between citations.
+
+    for source_name, source_usage_citations in database.items():
+
+        match source_usage_citations:
+
+
+
+            # Citation references a source that's not defined anywhere.
+
+            case { 'reference' : references, **rest } if not rest:
+
+                for reference in references:
+
+                    issues += [types.SimpleNamespace(
+                        file_path   = reference.file_path,
+                        line_number = reference.line_number,
+                        reason      = f'Undefined reference to source "{reference.source_name}".',
+                    )]
+
+
+
+            # A source that's defined multiple times.
+
+            case { 'definition' : [first, *others] } if others:
+
+                for other in others:
+                    issues += [types.SimpleNamespace(
+                        file_path   = other.file_path,
+                        line_number = other.line_number,
+                        reason      = f'Source "{other.source_name}" is already defined at [{first.file_path}:{first.line_number}]',
+                    )]
+
+
+
+            # A source that's not referenced by any citation.
+
+            case { 'definition' : [definition], **rest } if not rest:
+
                 issues += [types.SimpleNamespace(
-                    file_path = file_path,
-                    line_num  = line_num,
-                    reason    = str(error),
+                    file_path   = definition.file_path,
+                    line_number = definition.line_number,
+                    reason      = f'Source "{definition.source_name}" never used',
                 )]
 
 
-    sources   = coalesce((citation.source_name, citation) for citation in citations if citation.definition)
-    citations = [citation for citation in citations if not citation.definition]
 
-    return types.SimpleNamespace(sources = sources, citations = citations, issues = issues)
+            # A source with a single definition and some citations that reference it.
+
+            case { 'definition': [definition], 'reference': references, **rest } if not rest:
+
+                pass # No issues with this.
+
+
+
+            # A source with conflicting usages.
+            # e.g:
+            # >
+            # >    (AT)/by:`google.com`.    <- Is "google.com" an author, a URL, or a source that's defined elsewhere?
+            # >    (AT)/url:`google.com`.   <- "
+            # >    (AT)/`google.com`.       <- "
+            # >
+
+            case _ if len(source_usage_citations) >= 2:
+
+                for source_usage, source_citations in source_usage_citations.items():
+                    for citation in source_citations:
+                        issues += [types.SimpleNamespace(
+                            file_path   = citation.file_path,
+                            line_number = citation.line_number,
+                            reason      = f'Source "{source_name}" in this citation has the usage of "{source_usage}", which is conflicting with other citations.',
+                        )]
+
+
+
+    return database, issues
 
 
 
@@ -348,23 +470,31 @@ def get_citations():
 
 
 def log_issues(issues):
-    for issue, columns in zip(issues, ljusts((x.file_path, x.line_num) for x in issues)):
-        log('[WARNING] {0} : {1} : {2}'.format(*columns, issue.reason), ansi = 'fg_yellow')
+    for issue, ljust in zip(issues, ljusts((issue.file_path, issue.line_number) for issue in issues)):
+        log('[WARNING] {0} : {1} | {2}'.format(*ljust, issue.reason), ansi = 'fg_yellow')
+
+
+
+################################################################################################################################
 
 
 @ui('Find citations and source declarations that refer to a specific source name.')
 def find(
-    specific_source_name : (str           , 'Source name to search for; otherwise, list everything.') = None,
-    rename               : ((str, 'flag') , 'Change the source name of all occurrences.'            ) = None,
+    specific_source_name : (str          , 'Source name to search for; otherwise, list everything.') = None,
+    rename               : ((str, 'flag'), 'Change the source name of all occurrences.'            ) = None,
 ):
 
-    ledger = get_citations()
+    database, issues = get_citations()
+
+
+
+    # We list every citation.
 
     if specific_source_name is None:
 
-        #
-        # Can't do a rename without a source name first.
-        #
+
+
+        # Renaming citation sources can't be done without first specifying the original.
 
         if rename is not None:
             ui.help(subcommand_name = 'find')
@@ -376,89 +506,117 @@ def find(
             )
             return 1
 
-        #
-        # Find all the citations and group them based on the source.
-        #
 
-        sources_named = coalesce(ledger.citations, lambda x: (x.source_type, x.source_name))
 
-        def source_sorting(item):
 
-            (source_type, source_name), citations = item
 
-            ordering = []
 
-            # Sources with a unique declaration.
-            if (
-                source_type is None
-                and source_name in ledger.sources
-                and len(ledger.sources[source_name]) == 1
-            ):
-                ordering += [0]
 
-            # Sources with inlined declaration.
-            elif source_type is not None:
-                ordering += [1]
+#        rows = []
+#
+#
+#        for source_name, source_usage_citations in database.items():
+#
+#            match source_usage_citations:
+#
+#
+#
+#                # A source with a single definition and some citations that reference it.
+#
+#                case { 'definition': [definition], 'reference': references, **rest } if not rest:
+#
+#                    
+#
+#
+#                case _:
+#                    pass
 
-            # Sources that are missing a declaration;
-            # placed last so it'd be the first thing to be seen when user scrolls up.
-            else:
-                ordering += [2]
 
-            ordering += [source_type if source_type is not None else '']
 
-            if (
-                source_type is None
-                and (source := ledger.sources.get(source_name, None)) is not None
-                and len(source) == 1
-            ):
-                source,   = source
-                ordering += [(source.file_path, source.line_num)]
-            else:
-                ordering += [()]
 
-            return ordering
 
-        def citation_sorting(citation):
-            return citation.fields.get('pg', 0)
 
-        #
-        # Dump the results.
-        #
 
-        rows = [
-            (citation_sub_index, citation)
-            for (source_type, source_name), citations in sorted(sources_named.items(), key = source_sorting)
-            for citation_sub_index, citation in enumerate(sorted(citations, key = citation_sorting))
-        ]
 
-        rows = zip(rows, ljusts({
-            'file_path' : citation.file_path,
-            'line_num'  : citation.line_num,
-            'pg'        : f'pg {citation.fields['pg']}' if 'pg' in citation.fields else '',
-            'listing'   : f'{citation.listing} {citation.fields[citation.listing]}' if citation.listing is not None else '',
-        } for citation_sub_index, citation in rows))
+#        rows = []
+#
+#        for source_name, (definitions, references) in database.items():
+#
+#            for reference_i, reference in enumerate(references):
+#
+#                row = {
+#                    'file_path'   : reference.file_path,
+#                    'line_number' : reference.line_number,
+#                    'pg'          : f'pg {reference.fields['pg']}' if 'pg' in reference.fields else '',
+#                    'listing'     : f'{reference.listing} {reference.fields[reference.listing]}' if reference.listing is not None else '',
+#                }
+#                definition_preview = ('', '', '')
+#
+#
+#                match definitions:
+#
+#
+#
+#                    # These citations do not 
+#
+#                    case []:
+#
+#                        if reference.type is None:
+#                            file_path   = '???'
+#                            line_number = '???'
+#                        else:
+#                            file_path   = reference.file_path
+#                            line_number = reference.line_number
+#
+#                        start = reference.source_name_columns[0] - reference.column
+#                        end   = reference.source_name_columns[1] - reference.column
+#
+#                        definition_preview = (
+#                            f' [{file_path}:{line_number}] {reference.text[:start]}',
+#                            reference.text[start:end],
+#                            reference.text[end:],
+#                        )
+#
+#
+#                    case [definition]:
+#
+#                        if reference_i == 0:
+#
+#                            start = definition.source_name_columns[0] - definition.column
+#                            end   = definition.source_name_columns[1] - definition.column
+#
+#                            definition_preview = (
+#                                f' [{definition.file_path}:{definition.line_number}] {definition.text[:start]}',
+#                                definition.text[start:end],
+#                                definition.text[end:],
+#                            )
+#
+#
+#
+#                    case definitions:
+#
+#                        if reference_i == 0:
+#
+#                            definition_preview = (
+#                                f' [???:???] {CITATION_TAG}/`',
+#                                source_name,
+#                                '`',
+#                            )
+#
+#                rows += [(row, definition_preview)]
+#
+#
+#        for ljust, definition_preview in zip(ljusts(row for row, definition_preview in rows), (definition_preview for row, definition_preview in rows)):
+#            log('| {file_path} : {line_number} | {pg} | {listing} |'.format(**ljust), end = '')
+#            log(definition_preview[0], end = '')
+#            log(definition_preview[1], end = '', ansi = ('fg_magenta', 'bold', 'underline'))
+#            log(definition_preview[2], end = '')
+#            log()
 
-        for (citation_sub_index, citation), columns in rows:
 
-            log('| {file_path} : {line_num} | {pg} | {listing} |'.format(**columns), end = '')
-
-            if citation_sub_index:
-                log('')
-
-            elif citation.source_type:
-                log(f' {citation.text}')
-
-            elif (source := ledger.sources.get(citation.source_name, None)) is not None and len(source) == 1:
-                source, = source
-                log(f' [{source.file_path}:{source.line_num}] {source.text}')
-
-            else:
-                log(f' [???] {CITATION_TAG}`{citation.source_name}`')
-
-        if ledger.issues:
+        if issues:
             log()
-            log_issues(ledger.issues)
+            log_issues(issues)
 
     else:
 
@@ -492,7 +650,7 @@ def find(
             for src in source:
                 if src.source_name == specific_source_name:
                     occurrences[src.file_path] += [types.SimpleNamespace(
-                        line_num = src.line_num,
+                        line_number = src.line_number,
                         span     = src.source_name_span,
                         line     = src.line,
                     )]
@@ -500,7 +658,7 @@ def find(
         for citation in ledger.citations:
             if citation.source_name == specific_source_name:
                 occurrences[citation.file_path] += [types.SimpleNamespace(
-                    line_num = citation.line_num,
+                    line_number = citation.line_number,
                     span     = citation.source_name_span,
                     line     = citation.line,
                 )]
@@ -526,7 +684,7 @@ def find(
             for instance in instances
         ]
 
-        rows = zip(rows, ljusts((file_path, instance.line_num) for file_path, instance in rows))
+        rows = zip(rows, ljusts((file_path, instance.line_number) for file_path, instance in rows))
 
         for (file_path, instance), columns in rows:
             log('| {0} : {1} | '.format(*columns), end = '')
@@ -568,12 +726,12 @@ def find(
 
                 # Iterate through the citations on the line backwards
                 # so we can replace the source name properly.
-                for instance in sorted(instances, key = lambda instance: (instance.line_num, -instance.span[0])):
+                for instance in sorted(instances, key = lambda instance: (instance.line_number, -instance.span[0])):
 
-                    file_lines[instance.line_num - 1] = (
-                        file_lines[instance.line_num - 1][:instance.span[0]] +
+                    file_lines[instance.line_number - 1] = (
+                        file_lines[instance.line_number - 1][:instance.span[0]] +
                         rename +
-                        file_lines[instance.line_num - 1][instance.span[1]:]
+                        file_lines[instance.line_number - 1][instance.span[1]:]
                     )
 
                 file_path.write_text('\n'.join(file_lines) + '\n')

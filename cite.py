@@ -43,10 +43,10 @@ def get_file_paths():
         return False
 
     return [
-        pathlib.Path(root, file_name)
-        for root, dirs, file_names in root('./').walk()
+        pathlib.Path(parent_file_path, file_name)
+        for parent_file_path, dirs, file_names in root('./').walk()
         for file_name in file_names
-        if not pathlib.Path(root, file_name).is_dir() and not is_ignored(pathlib.Path(root, file_name))
+        if not pathlib.Path(parent_file_path, file_name).is_dir() and not is_ignored(pathlib.Path(parent_file_path, file_name))
     ]
 
 

@@ -12,7 +12,7 @@ ui           = UI('cite', 'Manage citations within the codebase.')
 
 
 
-def __get_file_paths():
+def _get_file_paths():
 
     #
     # TODO We have dumb logic here to get something that sort of
@@ -60,12 +60,12 @@ def __get_file_paths():
 
 
 
-def __get_citations():
+def _get_citations():
 
     citations = []
     issues    = []
 
-    for file_path in __get_file_paths():
+    for file_path in _get_file_paths():
 
 
 
@@ -519,7 +519,7 @@ def __get_citations():
 
 
 
-def __log_citations(citations, issues):
+def _log_citations(citations, issues):
 
     if citations:
 
@@ -592,7 +592,7 @@ def find(
             log(f'The new source name "{rename}" is the same as the old one; no renaming will be done.')
             return 0
 
-    all_citations, issues = __get_citations()
+    all_citations, issues = _get_citations()
 
 
 
@@ -614,7 +614,7 @@ def find(
 
         if not filtered_citations:
 
-            __log_citations(all_citations, issues)
+            _log_citations(all_citations, issues)
             log()
             log(f'No citations associated with that source name was found.')
             did_you_mean(specific_source_name, OrdSet(citation.source_name for citation in all_citations))
@@ -633,7 +633,7 @@ def find(
 
     # Show the citations and issues if any.
 
-    __log_citations(filtered_citations, issues)
+    _log_citations(filtered_citations, issues)
 
 
 
@@ -693,7 +693,7 @@ def find(
     # Typically renames are useful for fixing citation issues,
     # so we show the remaining issues that there may be.
 
-    new_citations, issues = __get_citations()
+    new_citations, issues = _get_citations()
 
     new_citations = [
         citation
@@ -702,4 +702,4 @@ def find(
     ]
 
     log()
-    __log_citations(new_citations, issues)
+    _log_citations(new_citations, issues)

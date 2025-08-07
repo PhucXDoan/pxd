@@ -1,4 +1,4 @@
-import math, pathlib, builtins, collections, __main__
+import math, pathlib, builtins, collections, difflib, __main__
 
 ################################################################################################################################
 
@@ -192,6 +192,22 @@ def deindent(string, *, multilined_string_literal = True, single_line_comment = 
     # Rejoining the lines while preserving the newlines.
 
     return ''.join(lines)
+
+
+
+################################################################################################################################
+
+
+
+def did_you_mean(given, options):
+
+    from ..pxd.log import log, ANSI
+
+    if matches := difflib.get_close_matches(given, options):
+
+        { log('Did you mean "{}"?', ANSI(matches[0], 'bold'))                          }
+        { log('          or "{}"?', ANSI(match     , 'bold')) for match in matches[1:] }
+        { log(' I was given "{}".', ANSI(given     , 'bold'))                          }
 
 
 

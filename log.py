@@ -1,4 +1,4 @@
-import contextlib, difflib
+import contextlib
 
 
 
@@ -49,170 +49,84 @@ ANSI_PROPERTIES = {
 
 
 
+class ANSI:
+
+    def __init__(self, value, *properties):
+        self.value      = value
+        self.properties = properties
+
+    def __str__(self):
+
+        result = str(self.value)
+
+        for property in self.properties:
+
+            result = (
+                ANSI_PROPERTIES[property][0] +
+                result                       +
+                ANSI_PROPERTIES[property][1]
+            )
+
+        return result
+
+
+
 ################################################################################################################################
 
-log_indent        = 0
-log_starting_line = True
-log_ansi_stack    = []
 
-def log(*value, **configs):
 
-    global log_indent, log_starting_line
+def log(*arguments, end = ..., clear = False):
 
-    #
-    # Determine if a value is provided.
-    #
 
-    if len(value) == 0:
-        given_value = False
-        value       = None
 
-    elif len(value) == 1:
-        given_value = True
-        value       = value[0]
+    # Determine how the routine is being used.
 
-    else:
-        raise RuntimeError(f'At most 1 non-keyword argument can be given; got {len(value)}.')
+    match arguments:
 
-    has_configs = bool(configs)
 
-    #
-    # Get common configurations.
-    #
 
-    if (ansi := configs.pop('ansi', None)) is not None:
+        # Just log out an empty line.
 
-        # The "ansi" configuration can be a single string or a tuple of strings.
-        if not isinstance(ansi, tuple):
-            ansi = (ansi,)
+        case []:
+            value = ''
 
-    indent = configs.pop('indent', None)
 
-    #
-    # We assume no `with` is being used.
-    #
 
-    if given_value or not has_configs:
+        # Just log out the value.
 
-        # Format value into a string.
-        if given_value:
-            string = str(value)
-        else:
-            string = ''
+        case [value]:
+            value = str(value)
 
-        # Apply ANSI graphics.
-        if ansi is not None:
 
-            # Enable the new graphics properties and disable them at the end.
-            for prop in ansi:
-                string  = ANSI_PROPERTIES[prop][0] + string
-                string += ANSI_PROPERTIES[prop][1]
 
-            # Reenable the graphics properties we had before, if there was any.
-            if log_ansi_stack:
-                for prop in log_ansi_stack[-1]:
-                    string += ANSI_PROPERTIES[prop][0]
+        # Perform formatting on the value.
+        # e.g:
+        # >
+        # >    log('Hello, {}. You have {} friends.', 'Ralph', 100)
+        # >
+        # >    log('There are {}!', ANSI('nukes incoming', 'fg_red'))
+        # >
 
-        # Apply indent.
+        case [value, *placeholders]:
+            value = str(value).format(*placeholders)
 
-        if indent:
-            log_indent += 1
 
-        if log_indent and log_starting_line:
 
-            indentation = ' ' * 4 * log_indent
+    # Functionality to be able to clear a row and not move onto next line;
+    # typically used for progress bars in CLI and such.
 
-            # Clear ANSI graphics so it doesn't apply to the indentation.
-            if log_ansi_stack:
-                indentation = f'\x1B[0m' + indentation
-                for props in log_ansi_stack:
-                    for prop in props:
-                        indentation += ANSI_PROPERTIES[prop][0]
+    if clear:
 
-            string = indentation + string
+        value = '\x1B[2K\r' + value
 
-        if indent:
-            log_indent -= 1
+        if end is ...: # If needed for some reason, `end` can be overridden.
+            end = ''
 
-        # Like print's "end" argument.
-        string += configs.pop('end', '\n')
 
-        # Log the string.
-        print(string, end = '')
 
-        log_starting_line = string.endswith('\n')
-        result            = None
+    # Finally print!
 
-    #
-    # Assuming `with` is being used.
-    #
+    if end is ...:
+        end = None
 
-    else:
-
-        @contextlib.contextmanager
-        def ctx():
-
-            global log_indent, log_ansi_stack
-
-            # Push graphics configuration onto stack.
-            if ansi is not None:
-                log_ansi_stack += [ansi]
-                for prop in log_ansi_stack[-1]:
-                    print(ANSI_PROPERTIES[prop][0], end = '')
-
-            # Increase indent.
-            if indent:
-                log_indent += 1
-
-            # User do other logging stuff.
-            yield
-
-            # Deindent.
-            if indent:
-                log_indent -= 1
-
-            # Pop the graphics configuration.
-            if ansi is not None:
-
-                # Undo the latest graphics configuration.
-                for prop in log_ansi_stack[-1]:
-                    print(ANSI_PROPERTIES[prop][1], end = '')
-
-                log_ansi_stack = log_ansi_stack[:-1]
-
-                # Reenable the old graphics configuraiton.
-                for props in log_ansi_stack:
-                    for prop in props:
-                        print(ANSI_PROPERTIES[prop][0], end = '')
-
-        result = ctx()
-
-    # There musn't be anything leftover.
-    if configs:
-        raise RuntimeError(f'Configurations not used: {configs}.')
-
-    return result
-
-def did_you_mean(message, given, options, ansi = None, tag = ''):
-
-    if tag:
-        tag += ' '
-
-    with log(ansi = ansi):
-
-        log(tag + message)
-
-        if (matches := difflib.get_close_matches(given, options)):
-
-            log(' ' * len(tag) + 'Did you mean "', end = ''               )
-            log(matches[0]                       , end = '', ansi = 'bold')
-            log('"?'                             ,                        )
-
-            for match in matches[1:]:
-                log(' ' * len(tag) + '          or "', end = ''               )
-                log(match                            , end = '', ansi = 'bold')
-                log('"?'                             ,                        )
-
-            log(' ' * len(tag) + '       I got "', end = ''               )
-            log(given                            , end = '', ansi = 'bold')
-            log('".'                             ,                        )
+    print(value, end = end)

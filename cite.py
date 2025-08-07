@@ -1,6 +1,6 @@
 import re, sys, types, pathlib, string, collections, difflib
 from ..pxd.ui    import UI
-from ..pxd.log   import log, did_you_mean
+from ..pxd.log   import log, ANSI
 from ..pxd.utils import *
 
 CITATION_TAG = '@' '/' # Written like this so that the script won't accidentally think this is a citation.
@@ -71,7 +71,7 @@ def __get_citations():
 
         # Show the current file we're processing.
 
-        log(f'\x1B[2K\r{file_path}', end = '', ansi = 'fg_green');
+        log(ANSI(file_path, 'fg_green'), clear = True);
 
 
 
@@ -509,7 +509,7 @@ def __get_citations():
 
     # Clear the line where we were showing the current file we were processing.
 
-    log(f'\x1B[2K\r', end = '');
+    log(clear = True)
 
     return citations, issues
 
@@ -525,18 +525,20 @@ def __log_citations(citations, issues):
 
         for citation, ljust in zip(citations, ljusts((citation.file_path, citation.line_number) for citation in citations)):
 
-            log('| {0} : {1} | '.format(*ljust), end = '')
-
-
             match citation.source_usage:
                 case 'definition': source_color = 'bg_blue'
                 case 'reference' : source_color = 'fg_cyan'
                 case _           : source_color = 'fg_magenta'
 
-            log(citation.line[                                : citation.source_name_columns[0]].lstrip(), end = '', ansi = 'fg_bright_black')
-            log(citation.line[citation.source_name_columns[0] : citation.source_name_columns[1]]         , end = '', ansi = (source_color, 'bold'))
-            log(citation.line[citation.source_name_columns[1] :                                ].rstrip(), end = '', ansi = 'fg_bright_black')
-            log()
+            start, end = citation.source_name_columns
+
+            log(
+                '| {} : {} | {}{}{}',
+                *ljust,
+                ANSI(citation.line[      : start].lstrip(), 'fg_bright_black'   ),
+                ANSI(citation.line[start : end  ]         , 'bold', source_color),
+                ANSI(citation.line[end   :      ].rstrip(), 'fg_bright_black'   ),
+            )
 
     else:
 
@@ -544,12 +546,15 @@ def __log_citations(citations, issues):
 
     if issues:
 
-        with log(ansi = 'fg_yellow'):
+        log()
 
-            log()
+        for issue, ljust in zip(issues, ljusts((issue.file_path, issue.line_number) for issue in issues)):
 
-            for issue, ljust in zip(issues, ljusts((issue.file_path, issue.line_number) for issue in issues)):
-                log('[WARNING] {0} : {1} | {2}'.format(*ljust, issue.reason))
+            log(
+                ANSI('[WARNING] {} : {} | {}', 'fg_yellow'),
+                *ljust,
+                issue.reason,
+            )
 
 
 
@@ -572,15 +577,15 @@ def find(
         rename = rename.strip()
 
         if specific_source_name is None:
-            log(f'[ERROR] In order rename citation sources, the old source name must be also given.', ansi = 'fg_red')
+            log(ANSI(f'[ERROR] In order rename citation sources, the old source name must be also given.', 'fg_red'))
             return 1
 
         if '`' in rename:
-            log(f'[ERROR] The new source name "{rename}" cannot have a backtick (`).', ansi = 'fg_red')
+            log(ANSI(f'[ERROR] The new source name "{rename}" cannot have a backtick (`).', 'fg_red'))
             return 1
 
         if rename == '':
-            log(f'[ERROR] The source cannot be renamed to an empty string.', ansi = 'fg_red')
+            log(ANSI(f'[ERROR] The source cannot be renamed to an empty string.', 'fg_red'))
             return 1
 
         if rename == specific_source_name:
@@ -611,11 +616,8 @@ def find(
 
             __log_citations(all_citations, issues)
             log()
-            did_you_mean(
-                f'No citations associated with "{specific_source_name}" was found.',
-                specific_source_name,
-                OrdSet(citation.source_name for citation in all_citations),
-            )
+            log(f'No citations associated with that source name was found.')
+            did_you_mean(specific_source_name, OrdSet(citation.source_name for citation in all_citations))
 
             return 0 # I'm arbitrarily saying no error here.
 
@@ -641,10 +643,10 @@ def find(
         return
 
     if any(citation.source_name == rename for citation in all_citations):
-        log(f'[WARNING] The new source name "{rename}" is the name of an already existing source.', ansi = 'fg_yellow')
+        log(ANSI(f'[WARNING] The new source name "{rename}" is the name of an already existing source.', 'fg_yellow'))
 
     log()
-    log(f'Enter "yes" to replace the source names with "{rename}"; otherwise abort: ', end ='')
+    log(f'Enter "yes" to replace the source names with "{rename}"; otherwise abort: ', end = '')
 
     try:
         response = input()
@@ -653,7 +655,7 @@ def find(
         response = None
 
     if response != 'yes':
-        log(f'Aborted the renaming.')
+        log('Aborted the renaming.')
         return 1
 
 

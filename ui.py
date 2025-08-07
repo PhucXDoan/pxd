@@ -1,5 +1,6 @@
 import types, inspect, builtins, collections, enum, copy
-from ..pxd.log import log, did_you_mean
+from ..pxd.log   import log
+from ..pxd.utils import did_you_mean
 
 # TODO Overriding subcommand names should be first verified.
 

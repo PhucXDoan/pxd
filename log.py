@@ -47,27 +47,74 @@ ANSI_PROPERTIES = {
     for property in properties # Some properties can go by more than one name.
 }
 
-
+_ansi_stack = []
 
 class ANSI:
 
-    def __init__(self, value, *properties):
-        self.value      = value
-        self.properties = properties
+    def __init__(self, *arguments):
+        self.arguments = arguments
+
+
+
+    # When being used as context-manager,
+    # we set up the output to have the desired ANSI graphic properties.
+
+    def __enter__(self):
+
+        global _ansi_stack
+
+        _ansi_stack += self.arguments
+
+        for property in self.arguments:
+            print(ANSI_PROPERTIES[property][0], end = '')
+
+
+
+    # At the end, we try to set the output back to the original ANSI settings.
+    # We also have to re-enable everything still on the stack again
+    # because the properties we just disabled might've overlapped
+    # with what's still on the stack.
+
+    def __exit__(self, *exception_info):
+
+        global _ansi_stack
+
+        _ansi_stack = _ansi_stack[:-len(self.arguments)]
+
+        for property in reversed(self.arguments):
+            print(ANSI_PROPERTIES[property][1], end = '')
+
+        for property in _ansi_stack:
+            print(ANSI_PROPERTIES[property][0], end = '')
+
+
+
+    # Sometimes the class is used to quickly paint a string.
+    # e.g:
+    # >
+    # >    log(ANSI('Red and bold!', 'fg_red', 'bold'))
+    # >
 
     def __str__(self):
 
-        result = str(self.value)
+        global _ansi_stack
 
-        for property in self.properties:
+        value, *properties = self.arguments
 
-            result = (
+        value = str(value)
+
+        for property in properties:
+
+            value = (
                 ANSI_PROPERTIES[property][0] +
-                result                       +
+                value                        +
                 ANSI_PROPERTIES[property][1]
             )
 
-        return result
+        for property in _ansi_stack: # In the event that we're in a context-manager.
+            value += ANSI_PROPERTIES[property][0]
+
+        return value
 
 
 

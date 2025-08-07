@@ -7,7 +7,12 @@ CITATION_TAG = '@' '/' # Written like this so that the script won't accidentally
 ui           = UI('cite', 'Manage citations within the codebase.')
 
 
-def get_file_paths():
+
+################################################################################################################################
+
+
+
+def __get_file_paths():
 
     #
     # TODO We have dumb logic here to get something that sort of
@@ -55,12 +60,12 @@ def get_file_paths():
 
 
 
-def get_citations():
+def __get_citations():
 
     citations = []
     issues    = []
 
-    for file_path in get_file_paths():
+    for file_path in __get_file_paths():
 
 
 
@@ -514,7 +519,7 @@ def get_citations():
 
 
 
-def log_citations(citations, issues):
+def __log_citations(citations, issues):
 
     if citations:
 
@@ -582,7 +587,7 @@ def find(
             log(f'The new source name "{rename}" is the same as the old one; no renaming will be done.')
             return 0
 
-    all_citations, issues = get_citations()
+    all_citations, issues = __get_citations()
 
 
 
@@ -604,7 +609,7 @@ def find(
 
         if not filtered_citations:
 
-            log_citations(all_citations, issues)
+            __log_citations(all_citations, issues)
             log()
             did_you_mean(
                 f'No citations associated with "{specific_source_name}" was found.',
@@ -626,7 +631,7 @@ def find(
 
     # Show the citations and issues if any.
 
-    log_citations(filtered_citations, issues)
+    __log_citations(filtered_citations, issues)
 
 
 
@@ -686,7 +691,7 @@ def find(
     # Typically renames are useful for fixing citation issues,
     # so we show the remaining issues that there may be.
 
-    new_citations, issues = get_citations()
+    new_citations, issues = __get_citations()
 
     new_citations = [
         citation
@@ -695,4 +700,4 @@ def find(
     ]
 
     log()
-    log_citations(new_citations, issues)
+    __log_citations(new_citations, issues)

@@ -1,7 +1,7 @@
 import re, sys, types, pathlib, string, collections, difflib
 from ..pxd.ui    import UI
 from ..pxd.log   import log, ANSI
-from ..pxd.utils import *
+from ..pxd.utils import coalesce, root, ljusts, did_you_mean, OrdSet
 
 CITATION_TAG = '@' '/' # Written like this so that the script won't accidentally think this is a citation.
 ui           = UI('cite', 'Manage citations within the codebase.')

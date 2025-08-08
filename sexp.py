@@ -1,84 +1,87 @@
 import string
-from ..pxd.log import log
 
 
 
-class Error(Exception):
-    pass
-
-
-
-#
-# To represent unquoted symbols.
-#
-
-class Atom(str):
-
-    def __new__(cls, value):
-        obj = super().__new__(cls, value)
-        obj.string = value
-        return obj
-
-    def __repr__(self):
-        return str(self)
-
-    def __str__(self):
-        return f'Atom({super().__repr__()})'
-
-
-
+################################################################################################################################
 #
 # Default routine for conversions of S-expression symbols to Python values.
 #
 
-def default_mapping(value, quote): # TODO This can be exposed to the caller to be customized.
+
+
+class Unquoted(str):
+    pass
+
+
+
+def default_mapping(value, quote):
+
+
+
+    # Some direct substituations.
 
     match value:
-
-        # Some direct substituations.
         case 'False' : return False
         case 'True'  : return True
         case 'None'  : return None
 
-        case _:
 
-            # Symbols that are quoted with backticks are to be evaluated literally.
-            # e.g. (a b `2 + 2` c d)   ->   (a b 4 c d)
-            if quote == '`':
-                return eval(value[1:-1], {}, {})
 
-            # Other quoted symbols will just be a Python string.
-            if quote:
-                return value[1:-1]
+    # Attempting to parse as an integer.
 
-            # Attempting to parse as an integer.
-            try:
-                return int(value)
-            except ValueError:
-                pass
+    try:
+        return int(value)
+    except ValueError:
+        pass
 
-            # Attempting to parse as a float.
-            try:
-                return float(value)
-            except ValueError:
-                pass
+
+
+    # Attempting to parse as a float.
+
+    try:
+        return float(value)
+    except ValueError:
+        pass
+
+
+
+    # Symbols that are quoted with backticks are to be evaluated literally.
+    # e.g:
+    # >
+    # >    (a b `2 + 2` c d)
+    # >    (a b    4    c d)
+    # >
+
+    if quote == '`':
+        return eval(value[1:-1], {}, {})
+
+
+
+    # Other quoted symbols will just be a Python string.
+
+    if quote:
+        return value[1:-1]
+
+
 
     # We indicate that the symbol was unquoted.
-    return Atom(value)
+
+    return Unquoted(value)
 
 
 
+################################################################################################################################
 #
 # The S-expression parser itself.
 #
 
-def parse(input, mapping = default_mapping):
-
-    line_number = 1
+def parse_sexp(input, mapping = default_mapping):
 
 
 
     # Strip whitespace and single-line comments.
+
+    line_number = 1
 
     def eat_filler():
 
@@ -137,7 +140,7 @@ def parse(input, mapping = default_mapping):
         eat_filler()
 
         if not input:
-            raise Error('Reached end of input while looking for the next token.')
+            raise SyntaxError('Reached end of input while looking for the next token.')
 
 
 
@@ -188,7 +191,7 @@ def parse(input, mapping = default_mapping):
                 if not input or input[0] == '\n':
 
                     if quote is not None:
-                        raise Error(f'On line {line_number}, string is missing ending quote ({quote}).')
+                        raise SyntaxError(f'On line {line_number}, string is missing ending quote ({quote}).')
 
                     break
 
@@ -223,7 +226,7 @@ def parse(input, mapping = default_mapping):
 
                     # This is mostly to catch weird quote mismatches.
                     if input and input[0] not in string.whitespace + ')':
-                        raise Error(
+                        raise SyntaxError(
                             f'On line {line_number}, string should have whitespace or ")" after the ending quote ({quote}).'
                         )
 
@@ -244,26 +247,13 @@ def parse(input, mapping = default_mapping):
     eat_filler()
 
     if not input or input[0] != '(':
-        raise Error(f'Input should start with the "(" token.')
+        raise SyntaxError(f'Input should start with the "(" token.')
 
     result = eat_expr()
 
     eat_filler()
 
     if input:
-        raise Error(f'On line {line_number}, additional tokens were found; input should just be a single value.')
+        raise SyntaxError(f'On line {line_number}, additional tokens were found; input should just be a single value.')
 
     return result
-
-
-
-#
-# Routine to convert parsed subexpressions which contain Atoms into regular strings.
-#
-
-def deatomize(value):
-    match value:
-        case Atom()  : return value.string
-        case tuple() : return tuple(map(deatomize, value))
-        case list()  : return list (map(deatomize, value))
-        case _       : return value

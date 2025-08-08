@@ -660,7 +660,14 @@ def find(parameters):
         log(ANSI(f'[WARNING] The new source name "{parameters.rename}" is the name of an already existing source.', 'fg_yellow'))
 
     log()
-    log(f'Enter "yes" to replace the source names with "{parameters.rename}"; otherwise abort: ', end = '')
+    log(
+        'Enter "{}" to convert "{}" to "{}"; otherwise {}: ',
+        ANSI('yes'            , 'fg_green'  ),
+        ANSI(parameters.source, 'fg_magenta', 'bold', 'underline'),
+        ANSI(parameters.rename, 'fg_magenta', 'bold', 'underline'),
+        ANSI('abort'          , 'fg_red'    ),
+        end = ''
+    )
 
     try:
         response = input()

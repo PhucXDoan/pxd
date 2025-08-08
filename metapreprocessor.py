@@ -28,6 +28,15 @@ class MetaError(Exception):
 
     def dump(self):
 
+        # Get the surrounding context of each stack.
+
+        for stack in self.stacks:
+            stack.lines = [
+                ((line_i + 1) - stack.line_number, line)
+                for line_i, line in enumerate(stack.file_path.read_text().splitlines())
+                if abs((line_i + 1) - stack.line_number) <= 4
+            ]
+
         # Log the stack trace.
 
         log()
@@ -137,7 +146,7 @@ class __META__:
         def wrapper(self, *args, **kwargs):
 
             if self.meta_directive.include_directive_file_path is None:
-                raise MetaError('Meta used in a meta-directive that has no associated include file path.')
+                raise RuntimeError('Meta used in a meta-directive that has no associated include file path.')
 
             return function(self, *args, **kwargs)
 
@@ -1273,6 +1282,7 @@ def do(*,
                 include_directive_line_number = include_directive_line_number,
                 exports                       = exports,
                 imports                       = imports,
+                explicit_imports              = imports,
                 global_exporter               = has_import_field and not imports,
                 body_lines                    = body_lines,
                 bytecode_name                 = None,
@@ -1293,10 +1303,21 @@ def do(*,
         if meta_directive.include_directive_file_path is not None
     ):
         if len(meta_directives_of_include_directive_file_path) >= 2:
+            error = RuntimeError(f'Meta-directives with the same output file path of "{include_directive_file_path}".')
             raise MetaError(
-                f'# Meta-directives with the same output file path of "{include_directive_file_path}": ' \
-                f'[{meta_directives_of_include_directive_file_path[0].source_file_path}:{meta_directives_of_include_directive_file_path[0].include_directive_line_number}] and ' \
-                f'[{meta_directives_of_include_directive_file_path[1].source_file_path}:{meta_directives_of_include_directive_file_path[1].include_directive_line_number}].'
+                stacks = [
+                    types.SimpleNamespace(
+                        file_path     = meta_directives_of_include_directive_file_path[0].source_file_path,
+                        line_number   = meta_directives_of_include_directive_file_path[0].include_directive_line_number,
+                        function_name = None,
+                    ),
+                    types.SimpleNamespace(
+                        file_path     = meta_directives_of_include_directive_file_path[1].source_file_path,
+                        line_number   = meta_directives_of_include_directive_file_path[1].include_directive_line_number,
+                        function_name = None,
+                    ),
+                ],
+                error = error
             )
 
 
@@ -1307,7 +1328,22 @@ def do(*,
         for symbol in meta_directive.exports
     ):
         if len(meta_directives_of_symbol) >= 2:
-            raise MetaError(f'# Multiple meta-directives export the symbol "{symbol}".')
+            error = RuntimeError(f'Multiple meta-directives export the symbol "{symbol}".')
+            raise MetaError(
+                stacks = [
+                    types.SimpleNamespace(
+                        file_path     = meta_directives_of_symbol[0].source_file_path,
+                        line_number   = meta_directives_of_symbol[0].meta_header_line_number,
+                        function_name = None,
+                    ),
+                    types.SimpleNamespace(
+                        file_path     = meta_directives_of_symbol[1].source_file_path,
+                        line_number   = meta_directives_of_symbol[1].meta_header_line_number,
+                        function_name = None,
+                    ),
+                ],
+                error = error
+            )
 
 
 
@@ -1322,10 +1358,30 @@ def do(*,
         for symbol in meta_directive.imports:
 
             if symbol in meta_directive.exports:
-                raise MetaError(f'# Meta-directives exports "{symbol}" but also imports it.')
+                error = RuntimeError(f'Meta-directives exports "{symbol}" but also imports it.')
+                raise MetaError(
+                    stacks = [
+                        types.SimpleNamespace(
+                            file_path     = meta_directive.source_file_path,
+                            line_number   = meta_directive.meta_header_line_number,
+                            function_name = None,
+                        ),
+                    ],
+                    error = error
+                )
 
             if symbol not in all_exports:
-                raise MetaError(f'# Meta-directives imports "{symbol}" but no meta-directive exports that.')
+                error = RuntimeError(f'Meta-directives imports "{symbol}" but no meta-directive exports that.')
+                raise MetaError(
+                    stacks = [
+                        types.SimpleNamespace(
+                            file_path     = meta_directive.source_file_path,
+                            line_number   = meta_directive.meta_header_line_number,
+                            function_name = None,
+                        ),
+                    ],
+                    error = error
+                )
 
 
 
@@ -1409,7 +1465,19 @@ def do(*,
         # Couldn't find the next meta-directive to execute.
 
         else:
-            raise MetaError(f'# Meta-directive has a circular import dependency.') # TODO Better error message.
+            error = RuntimeError(f'Meta-directive has a circular import dependency.')
+            raise MetaError(
+                stacks = [
+                    types.SimpleNamespace(
+                        file_path     = meta_directive.source_file_path,
+                        line_number   = meta_directive.meta_header_line_number,
+                        function_name = None,
+                    )
+                    for meta_directive in remaining_meta_directives
+                    if meta_directive.explicit_imports
+                ],
+                error = error
+            )
 
 
 
@@ -1483,10 +1551,16 @@ def do(*,
             for symbol in meta_directive.exports:
 
                 if symbol not in function_globals:
+                    error = RuntimeError(f'Symbol "{symbol}" was not defined.')
                     raise MetaError(
-                        undefined_exported_symbol = symbol,
-                        source_file_path          = meta_directive.source_file_path,
-                        meta_header_line_number   = meta_directive.meta_header_line_number,
+                        stacks = [
+                            types.SimpleNamespace(
+                                file_path     = meta_directive.source_file_path,
+                                line_number   = meta_directive.meta_header_line_number,
+                                function_name = None,
+                            )
+                        ],
+                        error = error
                     )
 
                 meta_globals[symbol] = function_globals[symbol]
@@ -1588,19 +1662,6 @@ def do(*,
                        line_number   = stack_line_number,
                        function_name = '<meta-directive>' if trace.name == '__META_DIRECTIVE__' else trace.name,
                    )]
-
-
-
-        # Get the surrounding context of each stack.
-
-        for stack in stacks:
-            stack.lines = [
-                ((line_i + 1) - stack.line_number, line)
-                for line_i, line in enumerate(stack.file_path.read_text().splitlines())
-                if abs((line_i + 1) - stack.line_number) <= 4
-            ]
-
-
 
 
 

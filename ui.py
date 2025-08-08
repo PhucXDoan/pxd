@@ -4,9 +4,33 @@ from ..pxd.log   import log, ANSI, Indent
 
 
 
+################################################################################################################################
+#
+# Exception for UI verbs to early exit;
+# this is mainly used for very nested control flow,
+# but doing a regular `return` is also valid.
+#
+# e.g:
+# >
+# >    @my_ui(...)
+# >    def using_a_return(parameters):
+# >        ...
+# >        return 0
+# >
+# >    @my_ui(...)
+# >    def using_exception(parameters):
+# >        ...
+# >        raise ExitCode(0)
+# >
+# >
+#
+
 class ExitCode(Exception):
     pass
 
+
+
+################################################################################################################################
 
 
 class UI:
@@ -68,7 +92,7 @@ class UI:
                 self.__error(
                     f'No verb by the name of "{parameters.verb}" found; see the list of verbs above.',
                     (parameters.verb, self.verbs.keys()),
-                    verb = None,
+                    help_verb = None,
                 )
 
 
@@ -84,7 +108,7 @@ class UI:
 
                 description = self.description
 
-                if callable(description):
+                if callable(description): # The string is evaluated on-demand.
                     description = description()
 
                 log(description)
@@ -127,7 +151,7 @@ class UI:
 
                     description = verb.description
 
-                    if callable(description):
+                    if callable(description): # The string is evaluated on-demand.
                         description = description()
 
                     log(description)
@@ -168,8 +192,6 @@ class UI:
 
                             log()
                             log(f'{parameter_schema.representation} {parameter_schema.description}')
-
-
 
                             with Indent():
 
@@ -357,7 +379,7 @@ class UI:
                 self.__error(
                     f'No verb by the name of "{verb_name}" found; see the list of verbs above.',
                     (verb_name, self.verbs.keys()),
-                    verb = None,
+                    help_verb = None,
                 )
 
             verb = self.verbs[verb_name]
@@ -425,7 +447,7 @@ class UI:
                 if flag_name in flag_arguments:
                     self.__error(
                         f'Flag "--{flag_name}" given more than once.',
-                        verb = verb_name,
+                        help_verb = verb_name,
                     )
 
                 flag_arguments[flag_name] = flag_value
@@ -456,7 +478,7 @@ class UI:
                         self.__error(
                             f'Parameter {parameter_schema.representation} is not a boolean flag and must be given a value; '
                             f'see the verb help above.',
-                            verb = verb_name,
+                            help_verb = verb_name,
                         )
 
                     parameters[parameter_schema.identifier] = 'True' if flag_value is None else flag_value
@@ -474,7 +496,7 @@ class UI:
                             f'--{flag_name}',
                             (f'--{parameter_schema.identifier.replace('_', '-')}' for parameter_schema in verb.parameter_schemas)
                         ),
-                        verb = verb_name
+                        help_verb = verb_name
                     )
 
 
@@ -517,7 +539,7 @@ class UI:
                 else:
                     self.__error(
                         f'No parameter to match with "{argument}"; see the verb help above.',
-                        verb = verb_name
+                        help_verb = verb_name
                     )
 
 
@@ -553,7 +575,7 @@ class UI:
                         except ValueError:
                             self.__error(
                                 f'Parameter {parameter_schema.representation} needs to be an integer; got "{parameter_value}".',
-                                verb = verb_name,
+                                help_verb = verb_name,
                             )
 
 
@@ -577,7 +599,7 @@ class UI:
                                 f'Truthy values are {', '.join(f'"{x}"' for x in TRUTHY if x)}.\n'
                                 f'Falsy  values are {', '.join(f'"{x}"' for x in FALSY      )}.\n'
                                 f'Values are case-insensitive.',
-                                verb = verb_name
+                                help_verb = verb_name
                             )
 
 
@@ -594,7 +616,7 @@ class UI:
                                 f'Value "{parameter_value}" is not a valid option for {parameter_schema.representation}; '
                                 f'see the options above.',
                                 (parameter_value, options),
-                                verb = verb_name,
+                                help_verb = verb_name,
                             )
 
                         if isinstance(options, dict):
@@ -628,7 +650,7 @@ class UI:
                 if parameter_schema.default is ...:
                     self.__error(
                         f'Missing required parameter {parameter_schema.representation}; see the verb help above.',
-                        verb = verb_name,
+                        help_verb = verb_name,
                     )
 
                 parameters[parameter_schema.identifier] = parameter_schema.default
@@ -661,9 +683,9 @@ class UI:
 
     def __is_option_type(type):
         match type:
-            case list() | tuple() | set() | OrderedSet() | dict()    : return True
-            case enumeration if UI.__is_enum(enumeration, enum.Enum) : return True
-            case _                                                   : return False
+            case list() | tuple() | set() | OrderedSet() | dict() : return True
+            case enumeration if UI.__is_enum(enumeration)         : return True
+            case _                                                : return False
 
 
 
@@ -694,7 +716,10 @@ class UI:
 
         # Execute!
 
-        exit_code = function()
+        try:
+            exit_code = function()
+        except ExitCode as error:
+            exit_code, = error.args
 
 
 
@@ -720,10 +745,10 @@ class UI:
 
     # Routine to emit an error message for the user working with the UI.
 
-    def __error(self, reason, did_you_mean_args = None, **help_kwargs):
+    def __error(self, reason, did_you_mean_args = None, help_verb = ...):
 
-        if help_kwargs:
-            self.invoke(['help'])
+        if help_verb is not ...:
+            self.invoke(['help'] if help_verb is None else ['help', help_verb])
 
         with ANSI('fg_red'), Indent('[ERROR] ', hanging = True):
 

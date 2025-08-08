@@ -122,7 +122,8 @@ class ANSI:
 
 
 
-_indent_stack = []
+_indent_stack     = []
+_on_start_of_line = True
 
 @contextlib.contextmanager
 def Indent(characters = ' ' * 4, hanging = False):
@@ -145,6 +146,8 @@ def Indent(characters = ' ' * 4, hanging = False):
 
 
 def log(*arguments, end = ..., clear = False):
+
+    global _on_start_of_line
 
 
 
@@ -203,12 +206,17 @@ def log(*arguments, end = ..., clear = False):
     # >            This makes it easy to do multi-lined things.
     # >
 
+    global last_line_ends_with_linefeed
+
     lines = value.splitlines(keepends = True)
 
     for line_i in range(len(lines)):
 
+        if line_i == 0 and not _on_start_of_line:
+            continue # The row we're currently on is already indented.
+
         if not lines[line_i].strip():
-            continue
+            continue # No need to indent.
 
         for indent in reversed(_indent_stack):
 
@@ -228,4 +236,8 @@ def log(*arguments, end = ..., clear = False):
     if end is ...:
         end = None
 
-    print(value, end = end)
+    value = str(value) + ('\n' if end is None else end)
+
+    print(value, end = '')
+
+    _on_start_of_line = value.endswith('\n')

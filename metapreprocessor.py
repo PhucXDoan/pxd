@@ -4,26 +4,24 @@ from ..pxd.utils import justify, deindent, c_repr, find_dupe, coalesce, OrderedS
 
 # TODO Warn on unused symbols.
 
+
+
+################################################################################################################################
+#
+# A wrapper around exceptions that are thrown during meta-preprocessing.
+# The main advantage of this is that we can log to the user with
+# detailed information about the stack-trace out of the box.
+# If the user wants to format it their own way, they are free to do so.
+#
+
 class MetaError(Exception):
 
-    def __init__(
-        self,
-        diagnostic                = None, *,
-        undefined_exported_symbol = None,
-        source_file_path          = None,
-        meta_header_line_number   = None,
-        stacks = None,
-        error = None,
-    ):
-        self.diagnostic                = diagnostic
-        self.undefined_exported_symbol = undefined_exported_symbol # When a meta-directive doesn't define a symbol it said it'd export.
-        self.source_file_path          = source_file_path          # "
-        self.meta_header_line_number   = meta_header_line_number   # "
-        self.stacks = stacks
-        self.error  = error
 
-    def __str__(self):
-        return self.diagnostic
+
+    def __init__(self, stacks, underlying_exception):
+        self.stacks               = stacks
+        self.underlying_exception = underlying_exception
+
 
 
     def dump(self):
@@ -89,31 +87,31 @@ class MetaError(Exception):
 
         with ANSI('fg_red'):
 
-            match self.error:
+            match self.underlying_exception:
 
                 # Sometimes the syntax error message will also mention a line number, but it won't be correct.
                 # This is a minor issue, though, so it's probably a not-fix.
                 # e.g: "[ERROR] closing parenthesis ')' does not match opening parenthesis '{' on line 10"
                 case SyntaxError():
-                    log(f'[ERROR] {self.error.args[0]}')
+                    log(f'[ERROR] {self.underlying_exception.args[0]}')
 
                 case NameError() | AttributeError() | ValueError():
-                    log(f'[ERROR] {self.error}')
+                    log(f'[ERROR] {self.underlying_exception}')
 
                 case AssertionError():
-                    if self.error.args:
-                        log(f'[ERROR] {self.error.args[0]}')
+                    if self.underlying_exception.args:
+                        log(f'[ERROR] {self.underlying_exception.args[0]}')
                     else:
                         log(f'[ERROR] Assertion failed.')
 
                 case KeyError():
-                    log(f'[ERROR] Got {type(self.error).__name__}.')
-                    log(f'        > {self.error}')
+                    log(f'[ERROR] Got {type(self.underlying_exception).__name__}.')
+                    log(f'        > {self.underlying_exception}')
 
                 case _:
-                    log(f'[ERROR] Got {type(self.error).__name__}.')
-                    if str(self.error).strip():
-                        log(f'        > {self.error}')
+                    log(f'[ERROR] Got {type(self.underlying_exception).__name__}.')
+                    if str(self.underlying_exception).strip():
+                        log(f'        > {self.underlying_exception}')
 
 
 
@@ -1303,9 +1301,8 @@ def do(*,
         if meta_directive.include_directive_file_path is not None
     ):
         if len(meta_directives_of_include_directive_file_path) >= 2:
-            error = RuntimeError(f'Meta-directives with the same output file path of "{include_directive_file_path}".')
             raise MetaError(
-                stacks = [
+                [
                     types.SimpleNamespace(
                         file_path     = meta_directives_of_include_directive_file_path[0].source_file_path,
                         line_number   = meta_directives_of_include_directive_file_path[0].include_directive_line_number,
@@ -1317,7 +1314,7 @@ def do(*,
                         function_name = None,
                     ),
                 ],
-                error = error
+                RuntimeError(f'Meta-directives with the same output file path of "{include_directive_file_path}".')
             )
 
 
@@ -1328,9 +1325,8 @@ def do(*,
         for symbol in meta_directive.exports
     ):
         if len(meta_directives_of_symbol) >= 2:
-            error = RuntimeError(f'Multiple meta-directives export the symbol "{symbol}".')
             raise MetaError(
-                stacks = [
+                [
                     types.SimpleNamespace(
                         file_path     = meta_directives_of_symbol[0].source_file_path,
                         line_number   = meta_directives_of_symbol[0].meta_header_line_number,
@@ -1342,7 +1338,7 @@ def do(*,
                         function_name = None,
                     ),
                 ],
-                error = error
+                RuntimeError(f'Multiple meta-directives export the symbol "{symbol}".')
             )
 
 
@@ -1358,29 +1354,27 @@ def do(*,
         for symbol in meta_directive.imports:
 
             if symbol in meta_directive.exports:
-                error = RuntimeError(f'Meta-directives exports "{symbol}" but also imports it.')
                 raise MetaError(
-                    stacks = [
+                    [
                         types.SimpleNamespace(
                             file_path     = meta_directive.source_file_path,
                             line_number   = meta_directive.meta_header_line_number,
                             function_name = None,
                         ),
                     ],
-                    error = error
+                    RuntimeError(f'Meta-directives exports "{symbol}" but also imports it.')
                 )
 
             if symbol not in all_exports:
-                error = RuntimeError(f'Meta-directives imports "{symbol}" but no meta-directive exports that.')
                 raise MetaError(
-                    stacks = [
+                    [
                         types.SimpleNamespace(
                             file_path     = meta_directive.source_file_path,
                             line_number   = meta_directive.meta_header_line_number,
                             function_name = None,
                         ),
                     ],
-                    error = error
+                    RuntimeError(f'Meta-directives imports "{symbol}" but no meta-directive exports that.')
                 )
 
 
@@ -1465,9 +1459,8 @@ def do(*,
         # Couldn't find the next meta-directive to execute.
 
         else:
-            error = RuntimeError(f'Meta-directive has a circular import dependency.')
             raise MetaError(
-                stacks = [
+                [
                     types.SimpleNamespace(
                         file_path     = meta_directive.source_file_path,
                         line_number   = meta_directive.meta_header_line_number,
@@ -1476,7 +1469,7 @@ def do(*,
                     for meta_directive in remaining_meta_directives
                     if meta_directive.explicit_imports
                 ],
-                error = error
+                RuntimeError(f'Meta-directive has a circular import dependency.')
             )
 
 
@@ -1551,16 +1544,15 @@ def do(*,
             for symbol in meta_directive.exports:
 
                 if symbol not in function_globals:
-                    error = RuntimeError(f'Symbol "{symbol}" was not defined.')
                     raise MetaError(
-                        stacks = [
+                        [
                             types.SimpleNamespace(
                                 file_path     = meta_directive.source_file_path,
                                 line_number   = meta_directive.meta_header_line_number,
                                 function_name = None,
                             )
                         ],
-                        error = error
+                        RuntimeError(f'Symbol "{symbol}" was not defined.')
                     )
 
                 meta_globals[symbol] = function_globals[symbol]
@@ -1667,7 +1659,7 @@ def do(*,
 
         # User deals with the exception now.
 
-        raise MetaError(stacks = stacks, error = error) from error
+        raise MetaError(stacks, error) from error
 
 
 

@@ -34,10 +34,11 @@ class UI:
 
     def __init__(self, name, description, verb_hook = None):
 
-        self.name        = name
-        self.description = description
-        self.verb_hook   = verb_hook
-        self.verbs       = {}
+        self.name           = name
+        self.description    = description
+        self.verb_hook      = verb_hook
+        self.verbs          = {}
+        self.invoke_parents = ()
 
 
 
@@ -45,7 +46,10 @@ class UI:
 
         @self(
             {
-                'description' : f'Show usage of "{self.name}"; use "{self.name} help all" to show more detailed information.',
+                'description' : lambda: (
+                    f'Show usage of "{self.name}"; '
+                    f'use "{' '.join([*self.invoke_parents, self.name])} help all" to show more detailed information.'
+                )
             },
             {
                 'name'        : 'verb',
@@ -54,7 +58,7 @@ class UI:
                 'default'     : None,
             },
         )
-        def help(parameters, show_header = None, hide_help = False):
+        def help(parameters, *, show_header = None, hide_help = False):
 
 
 
@@ -75,8 +79,15 @@ class UI:
                 show_header = parameters.verb in (None, 'all')
 
             if show_header:
-                log(ANSI(f'> {self.name} [verb] (parameters...)', 'bold', 'underline'))
-                log(self.description)
+
+                log(ANSI(f'> {' '.join([*self.invoke_parents, self.name])} [verb] (parameters...)', 'bold', 'underline'))
+
+                description = self.description
+
+                if callable(description):
+                    description = description()
+
+                log(description)
 
 
 
@@ -105,7 +116,7 @@ class UI:
                     if parameters.verb in (None, 'all'):
                         log()
 
-                    parts = ['>', self.name, verb.name]
+                    parts = ['>', *self.invoke_parents, self.name, verb.name]
 
                     if isinstance(verb, UI):
                         parts += ['[subverb]', '(subparameters...)']
@@ -113,7 +124,13 @@ class UI:
                         parts += [parameter_schema.representation for parameter_schema in verb.parameter_schemas]
 
                     log(ANSI(' '.join(parts), 'bold', 'underline'))
-                    log(verb.description)
+
+                    description = verb.description
+
+                    if callable(description):
+                        description = description()
+
+                    log(description)
 
 
 
@@ -129,7 +146,12 @@ class UI:
                     if isinstance(verb, UI):
 
                         with Indent():
-                            verb.invoke(['help', 'all'], show_header = False, hide_help = True)
+                            verb.invoke(
+                                ['help', 'all'],
+                                (),
+                                { 'show_header' : False, 'hide_help' : True },
+                                (*self.invoke_parents, self.name),
+                            )
 
                         continue
 
@@ -301,7 +323,15 @@ class UI:
     # Once all UI verbs have been defined,
     # the UI can be invoked and it'll automatically handle parsing the provided arguments.
 
-    def invoke(self, arguments, *bypass_args, **bypass_kwargs):
+    def invoke(self, arguments, bypass_args = (), bypass_kwargs = None, parents = None):
+
+        if bypass_kwargs is None:
+            bypass_kwargs = {}
+
+        if parents is None:
+            parents = self.invoke_parents
+        else:
+            self.invoke_parents = parents
 
         try:
 
@@ -330,7 +360,11 @@ class UI:
             # If the verb is another UI, then we hand off execution to it.
 
             if isinstance(verb, UI):
-                self.__execute(lambda: verb.invoke(arguments, *bypass_args, **bypass_kwargs), verb, None)
+                self.__execute(
+                    lambda: verb.invoke(arguments, bypass_args, bypass_kwargs, (*self.invoke_parents, self.name)),
+                    verb,
+                    None
+                )
 
 
 
@@ -587,7 +621,11 @@ class UI:
 
 
 
-            self.__execute(lambda: verb.function(parameters, *bypass_args, **bypass_kwargs), verb, parameters)
+            self.__execute(
+                lambda: verb.function(parameters, *bypass_args, **bypass_kwargs),
+                verb,
+                parameters
+            )
 
 
 
@@ -595,6 +633,9 @@ class UI:
 
         except ExitCode as error:
             exit_code, = error.args
+
+        finally:
+            self.invoke_parents = ()
 
         return exit_code
 

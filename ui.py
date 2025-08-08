@@ -1,5 +1,5 @@
 import builtins, types, enum
-from ..pxd.utils import is_a_subclass_of, did_you_mean, find_dupe, OrdSet
+from ..pxd.utils import did_you_mean, find_dupe, OrdSet
 from ..pxd.log   import log, ANSI, Indent
 
 
@@ -188,7 +188,7 @@ class UI:
 
                                     for option in options:
 
-                                        if is_a_subclass_of(option, enum.Enum):
+                                        if UI.__is_enum(option):
                                             option = option.name
 
                                         log(f'- {option}')
@@ -586,7 +586,7 @@ class UI:
 
                     case options if UI.__is_option_type(options):
 
-                        if is_a_subclass_of(options, enum.Enum):
+                        if UI.__is_enum(options):
                             options = { option.name : option for option in options }
 
                         if parameter_value not in options:
@@ -661,9 +661,9 @@ class UI:
 
     def __is_option_type(type):
         match type:
-            case list() | tuple() | set() | OrdSet() | dict()            : return True
-            case enumeration if is_a_subclass_of(enumeration, enum.Enum) : return True
-            case _                                                       : return False
+            case list() | tuple() | set() | OrdSet() | dict()        : return True
+            case enumeration if UI.__is_enum(enumeration, enum.Enum) : return True
+            case _                                                   : return False
 
 
 
@@ -734,3 +734,10 @@ class UI:
                 did_you_mean(*did_you_mean_args)
 
         raise ExitCode(1)
+
+
+
+    # Routine to check if a class is derived from enum.Enum.
+
+    def __is_enum(cls):
+       return isinstance(cls, type) and issubclass(cls, enum.Enum)

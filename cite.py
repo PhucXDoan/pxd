@@ -562,34 +562,48 @@ def _log_citations(citations, issues):
 
 
 
-@ui('Validate and list every citation.')
-def find(
-    specific_source_name : ( str         , 'Source name to filter by; otherwise, list everything.'      ) = None,
-    rename               : ((str, 'flag'), 'If given, replaces the sources of citations with a new one.') = None,
-):
+@ui(
+    {
+        'description' : 'Validate and list every citation.',
+    },
+    {
+        'name'        : 'source',
+        'description' : 'Source name to filter by; otherwise, list everything.',
+        'type'        : str,
+        'default'     : None,
+    },
+    {
+        'name'        : 'rename',
+        'description' : 'If given, replaces the sources of citations with a new one.',
+        'type'        : str,
+        'default'     : None,
+        'flag'        : True,
+    },
+)
+def find(parameters):
 
 
 
     # Some basic checks on parameters.
 
-    if rename is not None:
+    if parameters.rename is not None:
 
-        rename = rename.strip()
+        parameters.rename = parameters.rename.strip()
 
-        if specific_source_name is None:
+        if parameters.source is None:
             log(ANSI(f'[ERROR] In order rename citation sources, the old source name must be also given.', 'fg_red'))
             return 1
 
-        if '`' in rename:
-            log(ANSI(f'[ERROR] The new source name "{rename}" cannot have a backtick (`).', 'fg_red'))
+        if '`' in parameters.rename:
+            log(ANSI(f'[ERROR] The new source name "{parameters.rename}" cannot have a backtick (`).', 'fg_red'))
             return 1
 
-        if rename == '':
+        if parameters.rename == '':
             log(ANSI(f'[ERROR] The source cannot be renamed to an empty string.', 'fg_red'))
             return 1
 
-        if rename == specific_source_name:
-            log(f'The new source name "{rename}" is the same as the old one; no renaming will be done.')
+        if parameters.rename == parameters.source:
+            log(f'The new source name "{parameters.rename}" is the same as the old one; no renaming will be done.')
             return 0
 
     all_citations, issues = _get_citations()
@@ -599,12 +613,12 @@ def find(
     # If the user only wants to look for citations of a specific source name,
     # then filter down the list of citations.
 
-    if specific_source_name is not None:
+    if parameters.source is not None:
 
         filtered_citations = [
             citation
             for citation in all_citations
-            if citation.source_name == specific_source_name
+            if citation.source_name == parameters.source
         ]
 
 
@@ -617,7 +631,7 @@ def find(
             _log_citations(all_citations, issues)
             log()
             log(f'No citations associated with that source name was found.')
-            did_you_mean(specific_source_name, OrdSet(citation.source_name for citation in all_citations))
+            did_you_mean(parameters.source, OrdSet(citation.source_name for citation in all_citations))
 
             return 0 # I'm arbitrarily saying no error here.
 
@@ -639,14 +653,14 @@ def find(
 
     # Move onto the process of renaming, if requested.
 
-    if rename is None:
+    if parameters.rename is None:
         return
 
-    if any(citation.source_name == rename for citation in all_citations):
-        log(ANSI(f'[WARNING] The new source name "{rename}" is the name of an already existing source.', 'fg_yellow'))
+    if any(citation.source_name == parameters.rename for citation in all_citations):
+        log(ANSI(f'[WARNING] The new source name "{parameters.rename}" is the name of an already existing source.', 'fg_yellow'))
 
     log()
-    log(f'Enter "yes" to replace the source names with "{rename}"; otherwise abort: ', end = '')
+    log(f'Enter "yes" to replace the source names with "{parameters.rename}"; otherwise abort: ', end = '')
 
     try:
         response = input()
@@ -674,7 +688,7 @@ def find(
 
             file_lines[citation.line_number - 1] = (
                 file_lines[citation.line_number - 1][:citation.source_name_columns[0]] +
-                rename +
+                parameters.rename +
                 file_lines[citation.line_number - 1][citation.source_name_columns[1]:]
             )
 
@@ -698,7 +712,7 @@ def find(
     new_citations = [
         citation
         for citation in new_citations
-        if citation.source_name == rename
+        if citation.source_name == parameters.rename
     ]
 
     log()

@@ -1,4 +1,4 @@
-import contextlib
+import contextlib, types
 
 
 
@@ -122,6 +122,28 @@ class ANSI:
 
 
 
+_indent_stack = []
+
+@contextlib.contextmanager
+def Indent(characters = ' ' * 4, hanging = False):
+
+    global _indent_stack
+
+    _indent_stack += [types.SimpleNamespace(
+        characters = characters,
+        hanging     = hanging,
+    )]
+
+    yield
+
+    _indent_stack = _indent_stack[:-1]
+
+
+
+################################################################################################################################
+
+
+
 def log(*arguments, end = ..., clear = False):
 
 
@@ -168,6 +190,36 @@ def log(*arguments, end = ..., clear = False):
 
         if end is ...: # If needed for some reason, `end` can be overridden.
             end = ''
+
+
+
+    # Perform indentation.
+    # Some indents are hanging where the characters are only printed out once
+    # and the later lines are indented based on how many characters the indent was.
+    # e.g:
+    # >
+    # >    [ERROR] This line is hanging-indented with      "[ERROR] ".
+    # >            This line is now indented too, but with "        ".
+    # >            This makes it easy to do multi-lined things.
+    # >
+
+    lines = value.splitlines(keepends = True)
+
+    for line_i in range(len(lines)):
+
+        if not lines[line_i].strip():
+            continue
+
+        for indent in reversed(_indent_stack):
+
+            characters = indent.characters
+
+            if indent.hanging:
+                indent.characters = ' ' * len(indent.characters)
+
+            lines[line_i] = characters + lines[line_i]
+
+    value = ''.join(lines)
 
 
 

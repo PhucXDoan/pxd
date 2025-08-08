@@ -1,10 +1,17 @@
-import re, sys, types, pathlib, string, collections, difflib
-from ..pxd.ui    import UI
+import re, pathlib, string, collections
+from ..pxd.utils import types, coalesce, root, justify, did_you_mean, OrderedSet
 from ..pxd.log   import log, ANSI
-from ..pxd.utils import coalesce, root, justify, did_you_mean, OrderedSet
+from ..pxd.ui    import UI
+
+
+
+################################################################################################################################
+
+
 
 CITATION_TAG = '@' '/' # Written like this so that the script won't accidentally think this is a citation.
-ui           = UI('cite', 'Manage citations within the codebase.')
+
+ui = UI('cite', 'Manage citations within the codebase.')
 
 
 
@@ -555,20 +562,15 @@ def _log_citations(citations, issues):
 
         log()
 
-        for issue, *just in justify(
+        for just in justify(
             (
-                (None, issue            ),
                 ('<' , issue.file_path  ),
                 ('<' , issue.line_number),
+                (None, issue.reason     ),
             )
             for issue in issues
         ):
-
-            log(
-                ANSI('[WARNING] {} : {} | {}', 'fg_yellow'),
-                *just,
-                issue.reason,
-            )
+            log(ANSI('[WARNING] {} : {} | {}', 'fg_yellow'), *just)
 
 
 

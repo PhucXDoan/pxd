@@ -274,10 +274,14 @@ class UI:
 
 
 
-                        # Ensure that when we use SimpleNamespace that all of the parameters are accessible.
+                        # Ensure that when we use SimpleNamespace that all of the parameters are accessible
+                        # and won't conflict with UI's implementation.
 
                         if not parameter_schema.identifier.isidentifier():
                             raise RuntimeError(f'Parameter name "{parameter_schema.identifier}" is not a valid identifier.')
+
+                        if parameter_schema.identifier == 'help':
+                            raise RuntimeError(f'Parameter name "{parameter_schema.identifier}" is reserved.')
 
 
 
@@ -346,6 +350,9 @@ class UI:
 
             verb_name, *arguments = arguments
 
+            if verb_name in ('--help', '-help'):
+                verb_name = 'help'
+
             if verb_name not in self.verbs:
                 self.__error(
                     f'No verb by the name of "{verb_name}" found; see the list of verbs above.',
@@ -406,6 +413,13 @@ class UI:
 
 
 
+                # The user is just trying to get the help through a flag.
+
+                if flag_name == 'help' and flag_value is None:
+                    raise ExitCode(self.invoke(['help', verb_name]))
+
+
+
                 # Make sure the flag argument is unique.
 
                 if flag_name in flag_arguments:
@@ -415,6 +429,8 @@ class UI:
                     )
 
                 flag_arguments[flag_name] = flag_value
+
+
 
 
 

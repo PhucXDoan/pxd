@@ -11,15 +11,100 @@ class MetaError(Exception):
         diagnostic                = None, *,
         undefined_exported_symbol = None,
         source_file_path          = None,
-        meta_header_line_number   = None
+        meta_header_line_number   = None,
+        stacks = None,
+        error = None,
     ):
         self.diagnostic                = diagnostic
         self.undefined_exported_symbol = undefined_exported_symbol # When a meta-directive doesn't define a symbol it said it'd export.
         self.source_file_path          = source_file_path          # "
         self.meta_header_line_number   = meta_header_line_number   # "
+        self.stacks = stacks
+        self.error  = error
 
     def __str__(self):
         return self.diagnostic
+
+
+    def dump(self):
+
+        # Log the stack trace.
+
+        log()
+
+        line_number_just = max([0] + [len(str(stack.line_number + stack.lines[-1][0])) for stack in self.stacks])
+
+        for stack_i, stack in enumerate(self.stacks):
+
+
+
+            # Spacer.
+
+            if stack_i:
+                log(' ' * line_number_just + ' .')
+                log(' ' * line_number_just + ' . ', end = '')
+                log(ANSI('.' * 150, 'fg_bright_black'))
+                log(' ' * line_number_just + ' .')
+
+
+
+            # Show the context.
+
+            log(' ' * line_number_just + ' |')
+
+            for line_delta, line in stack.lines:
+
+                with ANSI('bold' if line_delta == 0 else None): # TODO Allow end = ''.
+
+                    line_number = stack.line_number + line_delta
+
+                    log(f'{str(line_number).rjust(line_number_just)} |', end  = '')
+                    log(ANSI(f' {line}', 'bg_red' if line_delta == 0 else None), end = '')
+
+                    if line_delta == 0:
+
+                        log(ANSI(f' <- {stack.file_path} : {line_number}', 'fg_yellow'), end = '')
+
+                        if stack.function_name is not None:
+                            log(ANSI(f' : {stack.function_name}', 'fg_yellow'), end = '')
+
+                    log()
+
+            log(' ' * line_number_just + ' |')
+
+        log()
+
+
+
+        # Log the reason.
+
+        with ANSI('fg_red'):
+
+            match self.error:
+
+                # Sometimes the syntax error message will also mention a line number, but it won't be correct.
+                # This is a minor issue, though, so it's probably a not-fix.
+                # e.g: "[ERROR] closing parenthesis ')' does not match opening parenthesis '{' on line 10"
+                case SyntaxError():
+                    log(f'[ERROR] {self.error.args[0]}')
+
+                case NameError() | AttributeError() | ValueError():
+                    log(f'[ERROR] {self.error}')
+
+                case AssertionError():
+                    if self.error.args:
+                        log(f'[ERROR] {self.error.args[0]}')
+                    else:
+                        log(f'[ERROR] Assertion failed.')
+
+                case KeyError():
+                    log(f'[ERROR] Got {type(self.error).__name__}.')
+                    log(f'        > {self.error}')
+
+                case _:
+                    log(f'[ERROR] Got {type(self.error).__name__}.')
+                    if str(self.error).strip():
+                        log(f'        > {self.error}')
 
 
 
@@ -1517,89 +1602,11 @@ def do(*,
 
 
 
-        # Log the stack trace.
-
-        log()
-
-        line_number_just = max([0] + [len(str(stack.line_number + stack.lines[-1][0])) for stack in stacks])
-
-        for stack_i, stack in enumerate(stacks):
-
-
-
-            # Spacer.
-
-            if stack_i:
-                log(' ' * line_number_just + ' .')
-                log(' ' * line_number_just + ' . ', end = '')
-                log(ANSI('.' * 150, 'fg_bright_black'))
-                log(' ' * line_number_just + ' .')
-
-
-
-            # Show the context.
-
-            log(' ' * line_number_just + ' |')
-
-            for line_delta, line in stack.lines:
-
-                with ANSI('bold' if line_delta == 0 else None): # TODO Allow end = ''.
-
-                    line_number = stack.line_number + line_delta
-
-                    log(f'{str(line_number).rjust(line_number_just)} |', end  = '')
-                    log(ANSI(f' {line}', 'bg_red' if line_delta == 0 else None), end = '')
-
-                    if line_delta == 0:
-
-                        log(ANSI(f' <- {stack.file_path} : {line_number}', 'fg_yellow'), end = '')
-
-                        if stack.function_name is not None:
-                            log(ANSI(f' : {stack.function_name}', 'fg_yellow'), end = '')
-
-                    log()
-
-            log(' ' * line_number_just + ' |')
-
-        log()
-
-
-
-        # Log the reason.
-
-        with ANSI('fg_red'):
-
-            match error:
-
-                # Sometimes the syntax error message will also mention a line number, but it won't be correct.
-                # This is a minor issue, though, so it's probably a not-fix.
-                # e.g: "[ERROR] closing parenthesis ')' does not match opening parenthesis '{' on line 10"
-                case SyntaxError():
-                    log(f'[ERROR] {error.args[0]}')
-
-                case NameError() | AttributeError() | ValueError():
-                    log(f'[ERROR] {error}')
-
-                case AssertionError():
-                    if error.args:
-                        log(f'[ERROR] {error.args[0]}')
-                    else:
-                        log(f'[ERROR] Assertion failed.')
-
-                case KeyError():
-                    log(f'[ERROR] Got {type(error).__name__}.')
-                    log(f'        > {error}')
-
-                case _:
-                    log(f'[ERROR] Got {type(error).__name__}.')
-                    if str(error).strip():
-                        log(f'        > {error}')
-
 
 
         # User deals with the exception now.
 
-        raise MetaError from error
+        raise MetaError(stacks = stacks, error = error) from error
 
 
 

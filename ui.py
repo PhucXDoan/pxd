@@ -4,6 +4,11 @@ from ..pxd.log   import log, ANSI, Indent
 
 
 
+class ExitCode(Exception):
+    pass
+
+
+
 class UI:
 
 
@@ -56,13 +61,11 @@ class UI:
             # If a specific verb was given, see if it exists.
 
             if parameters.verb not in (None, 'all') and parameters.verb not in self.verbs:
-
-                help(types.SimpleNamespace(verb = None))
-
-                with ANSI('fg_red'), Indent('[ERROR] ', hanging = True):
-                    log()
-                    log(f'No verb by the name of "{parameters.verb}" found; see the list of verbs above.')
-                    did_you_mean(parameters.verb, self.verbs.keys())
+                self.__error(
+                    f'No verb by the name of "{parameters.verb}" found; see the list of verbs above.',
+                    (parameters.verb, self.verbs.keys()),
+                    verb = None,
+                )
 
 
 
@@ -72,7 +75,6 @@ class UI:
                 show_header = parameters.verb in (None, 'all')
 
             if show_header:
-
                 log(ANSI(f'> {self.name} [verb] (parameters...)', 'bold', 'underline'))
                 log(self.description)
 
@@ -307,333 +309,300 @@ class UI:
 
     def invoke(self, arguments, *bypass_args, **bypass_kwargs):
 
+        try:
 
+            # If no arguments, then we just provide the help information.
 
-        # If no arguments, then we just provide the help information.
-
-        if not arguments:
-            arguments = ['help']
-
-
-
-        # Find the verb.
-
-        verb_name, *arguments = arguments
-
-        if verb_name not in self.verbs:
-
-            self.help(types.SimpleNamespace(verb = None))
-
-            with ANSI('fg_red'), Indent('[ERROR] ', hanging = True):
-                log()
-                log(f'No verb by the name of "{verb_name}" found; see the list of verbs above.')
-                did_you_mean(verb_name, self.verbs.keys())
-
-            return 1
-
-        verb = self.verbs[verb_name]
+            if not arguments:
+                arguments = ['help']
 
 
 
-        # If the verb is another UI, then we hand off execution to it.
+            # Find the verb.
 
-        if isinstance(verb, UI):
-            return self.__execute(lambda: verb.invoke(arguments, *bypass_args, **bypass_kwargs), verb, None)
+            verb_name, *arguments = arguments
 
+            if verb_name not in self.verbs:
+                self.__error(
+                    f'No verb by the name of "{verb_name}" found; see the list of verbs above.',
+                    (verb_name, self.verbs.keys()),
+                    verb = None,
+                )
 
-
-        # We first gather all of the arguments that are flags.
-        # e.g:
-        # >
-        # >    MyUI "hello" "world" --output="This" 123 --silent
-        # >                         ^^^^^^^^^^^^^^^     ^^^^^^^^
-        # >
-
-        flag_arguments    = {}
-        nonflag_arguments = []
-
-        for argument in arguments:
+            verb = self.verbs[verb_name]
 
 
 
-            # We process non-flag arguments later on.
+            # If the verb is another UI, then we hand off execution to it.
 
-            if not argument.startswith(prefix := '--'):
-                nonflag_arguments += [argument]
-                continue
-
+            if isinstance(verb, UI):
+                self.__execute(lambda: verb.invoke(arguments, *bypass_args, **bypass_kwargs), verb, None)
 
 
-            # Grab the RHS of the flag if there is one.
+
+            # We first gather all of the arguments that are flags.
             # e.g:
             # >
             # >    MyUI "hello" "world" --output="This" 123 --silent
-            # >                                  ^^^^^^
+            # >                         ^^^^^^^^^^^^^^^     ^^^^^^^^
             # >
 
-            flag_name, *flag_value = argument.removeprefix(prefix).split('=')
+            flag_arguments    = {}
+            nonflag_arguments = []
 
-            if flag_value == []:
-                flag_value = None
-            else:
-                flag_value, = flag_value
+            for argument in arguments:
 
 
 
-            # Make sure the flag argument is unique.
+                # We process non-flag arguments later on.
 
-            if flag_name in flag_arguments:
-
-                self.help(types.SimpleNamespace(verb = verb_name))
-
-                with ANSI('fg_red'), Indent('[ERROR] ', hanging = True):
-                    log()
-                    log(f'Flag "--{flag_name}" given more than once.')
-
-                return 1
-
-            flag_arguments[flag_name] = flag_value
-
-
-
-        # We now handle the flag arguments.
-
-        parameters = {}
-
-        for flag_name, flag_value in flag_arguments.items():
-
-
-
-            # Find the matching parameter to go with the flag.
-
-            for parameter_schema in verb.parameter_schemas:
-
-                if parameter_schema.identifier in parameters:
+                if not argument.startswith(prefix := '--'):
+                    nonflag_arguments += [argument]
                     continue
 
-                if parameter_schema.identifier.replace('_', '-') != flag_name:
-                    continue
 
-                if parameter_schema.type != bool and flag_value is None:
 
-                    self.help(types.SimpleNamespace(verb = verb_name))
+                # Grab the RHS of the flag if there is one.
+                # e.g:
+                # >
+                # >    MyUI "hello" "world" --output="This" 123 --silent
+                # >                                  ^^^^^^
+                # >
 
-                    with ANSI('fg_red'), Indent('[ERROR] ', hanging = True):
-                        log()
-                        log(
-                            f'Parameter {parameter_schema.representation} is not a boolean flag and must be given a value; '
-                            f'see the verb help above.'
-                        )
+                flag_name, *flag_value = argument.removeprefix(prefix).split('=')
 
-                    return 1
-
-                parameters[parameter_schema.identifier] = 'True' if flag_value is None else flag_value
-
-                break
+                if flag_value == []:
+                    flag_value = None
+                else:
+                    flag_value, = flag_value
 
 
 
-            # No parameter found to go with this flag.
+                # Make sure the flag argument is unique.
 
-            else:
-
-                self.help(types.SimpleNamespace(verb = verb_name))
-
-                with ANSI('fg_red'), Indent('[ERROR] ', hanging = True):
-                    log()
-                    log(f'No parameter to match with flag "--{flag_name}"; see the verb help above.')
-                    did_you_mean(
-                        f'--{flag_name}',
-                        (f'--{parameter_schema.identifier.replace('_', '-')}' for parameter_schema in verb.parameter_schemas)
+                if flag_name in flag_arguments:
+                    self.__error(
+                        f'Flag "--{flag_name}" given more than once.',
+                        verb = verb_name,
                     )
 
-                return 1
+                flag_arguments[flag_name] = flag_value
 
 
 
-        # We now move onto handling the non-flag arguments.
-        # e.g:
-        # >
-        # >    MyUI "hello" "world" --output="This" 123 --silent
-        # >         ^^^^^^^ ^^^^^^^                 ^^^
-        # >
+            # We now handle the flag arguments.
 
-        for argument in nonflag_arguments:
+            parameters = {}
+
+            for flag_name, flag_value in flag_arguments.items():
 
 
 
-            # Find the first parameter that hasn't been done yet.
+                # Find the matching parameter to go with the flag.
+
+                for parameter_schema in verb.parameter_schemas:
+
+                    if parameter_schema.identifier in parameters:
+                        continue
+
+                    if parameter_schema.identifier.replace('_', '-') != flag_name:
+                        continue
+
+                    if parameter_schema.type != bool and flag_value is None:
+                        self.__error(
+                            f'Parameter {parameter_schema.representation} is not a boolean flag and must be given a value; '
+                            f'see the verb help above.',
+                            verb = verb_name,
+                        )
+
+                    parameters[parameter_schema.identifier] = 'True' if flag_value is None else flag_value
+
+                    break
+
+
+
+                # No parameter found to go with this flag.
+
+                else:
+                    self.__error(
+                        f'No parameter to match with flag "--{flag_name}"; see the verb help above.',
+                        (
+                            f'--{flag_name}',
+                            (f'--{parameter_schema.identifier.replace('_', '-')}' for parameter_schema in verb.parameter_schemas)
+                        ),
+                        verb = verb_name
+                    )
+
+
+
+            # We now move onto handling the non-flag arguments.
+            # e.g:
+            # >
+            # >    MyUI "hello" "world" --output="This" 123 --silent
+            # >         ^^^^^^^ ^^^^^^^                 ^^^
+            # >
+
+            for argument in nonflag_arguments:
+
+
+
+                # Find the first parameter that hasn't been done yet.
+
+                for parameter_schema in verb.parameter_schemas:
+
+                    if parameter_schema.identifier in parameters:
+                        continue
+
+                    if parameter_schema.flag:
+
+                        self._error(
+                            f'Argument "{argument}" is assumed to be for parameter {parameter_schema.representation}, '
+                            f'but this parameter must be a flag.\n'
+                            f'Try (--{parameter_schema.identifier.replace('_', '-')}="{argument}") instead.',
+                            verb = verb_name
+                        )
+
+                    parameters[parameter_schema.identifier] = argument
+
+                    break
+
+
+
+                # If all parameters have been accounted for, then we have been given an extraneous argument.
+
+                else:
+                    self.__error(
+                        f'No parameter to match with "{argument}"; see the verb help above.',
+                        verb = verb_name
+                    )
+
+
+
+            # Now we validate and parse each parameter.
+
+            for parameter_schema in verb.parameter_schemas:
+
+                if parameter_schema.identifier not in parameters:
+                    continue
+
+                parameter_value = parameters[parameter_schema.identifier]
+
+                match parameter_schema.type:
+
+
+
+                    # The argument should've been a string, which it always is, so not much to do here.
+
+                    case builtins.str:
+                        pass
+
+
+
+                    # The argument should've been an integer.
+
+                    case builtins.int:
+
+                        try:
+
+                            parameter_value = int(parameter_value)
+
+                        except ValueError:
+                            self.__error(
+                                f'Parameter {parameter_schema.representation} needs to be an integer; got "{parameter_value}".',
+                                verb = verb_name,
+                            )
+
+
+
+                    # The argument should've been a boolean, so we try to interpret it as so.
+
+                    case builtins.bool:
+
+                        FALSY  = ('0', 'f', 'n', 'no' , 'false')
+                        TRUTHY = ('1', 't', 'y', 'yes', 'true' )
+
+                        if parameter_value.lower() in FALSY:
+                            parameter_value = False
+
+                        elif parameter_value.lower() in TRUTHY:
+                            parameter_value = True
+
+                        else:
+                            self.__error(
+                                f'Parameter {parameter_schema.representation} needs to be a boolean; got "{parameter_value}".\n'
+                                f'Truthy values are {', '.join(f'"{x}"' for x in TRUTHY if x)}.\n'
+                                f'Falsy  values are {', '.join(f'"{x}"' for x in FALSY      )}.\n'
+                                f'Values are case-insensitive.',
+                                verb = verb_name
+                            )
+
+
+
+                    # The argument should've been one of many options.
+
+                    case options if UI.__is_option_type(options):
+
+                        if is_a_subclass_of(options, enum.Enum):
+                            options = { option.name : option for option in options }
+
+                        if parameter_value not in options:
+                            self.__error(
+                                f'Value "{parameter_value}" is not a valid option for {parameter_schema.representation}; '
+                                f'see the options above.',
+                                (parameter_value, options),
+                                verb = verb_name,
+                            )
+
+                        if isinstance(options, dict):
+                            parameter_value = options[parameter_value]
+
+
+
+                    # This parameter's type hasn't been handled yet.
+
+                    case unsupported:
+                        raise RuntimeError(f'Unsupported parameter type: {unsupported}.')
+
+
+
+                # Update the parameter with the parsed value.
+
+                parameters[parameter_schema.identifier] = parameter_value
+
+
+
+            # Now we assign parameters with their default value if it hasn't been accounted for yet.
+            # We need to do this after we parsed and validated the parameters so that we can have
+            # default values that can be outside the parameter's specified type (e.g. parameter of
+            # type `int` can have default value of `None`).
 
             for parameter_schema in verb.parameter_schemas:
 
                 if parameter_schema.identifier in parameters:
                     continue
 
-                if parameter_schema.flag:
+                if parameter_schema.default is ...:
+                    self.__error(
+                        f'Missing required parameter {parameter_schema.representation}; see the verb help above.',
+                        verb = verb_name,
+                    )
 
-                    self.help(types.SimpleNamespace(verb = verb_name))
+                parameters[parameter_schema.identifier] = parameter_schema.default
 
-                    with ANSI('fg_red'), Indent('[ERROR] ', hanging = True):
-                        log()
-                        log(
-                            f'Argument "{argument}" is assumed to be for parameter {parameter_schema.representation}, '
-                            f'but this parameter must be a flag.'
-                        )
-                        log(f'Try (--{parameter_schema.identifier.replace('_', '-')}="{argument}") instead.')
+            parameters = types.SimpleNamespace(**parameters)
 
-                    return 1
 
-                parameters[parameter_schema.identifier] = argument
 
-                break
+            self.__execute(lambda: verb.function(parameters, *bypass_args, **bypass_kwargs), verb, parameters)
 
 
 
-            # If all parameters have been accounted for, then we have been given an extraneous argument.
+        # Exiting; maybe we successfully executed the verb or maybe we didn't.
 
-            else:
+        except ExitCode as error:
+            exit_code, = error.args
 
-                self.help(types.SimpleNamespace(verb = verb_name))
-
-                with ANSI('fg_red'), Indent('[ERROR] ', hanging = True):
-                    log()
-                    log(f'No parameter to match with "{argument}"; see the verb help above.')
-
-                return 1
-
-
-
-        # Now we validate and parse each parameter.
-
-        for parameter_schema in verb.parameter_schemas:
-
-            if parameter_schema.identifier not in parameters:
-                continue
-
-            parameter_value = parameters[parameter_schema.identifier]
-
-            match parameter_schema.type:
-
-
-
-                # The argument should've been a string, which it always is, so not much to do here.
-
-                case builtins.str:
-                    pass
-
-
-
-                # The argument should've been an integer.
-
-                case builtins.int:
-                    try:
-                        parameter_value = int(parameter_value)
-                    except ValueError:
-
-                        self.help(types.SimpleNamespace(verb = verb_name))
-
-                        with ANSI('fg_red'), Indent('[ERROR] ', hanging = True):
-                            log()
-                            log(f'Parameter {parameter_schema.representation} needs to be an integer; got "{parameter_value}".')
-
-                        return 1
-
-
-
-                # The argument should've been a boolean, so we try to interpret it as so.
-
-                case builtins.bool:
-
-                    FALSY  = ('0', 'f', 'n', 'no' , 'false')
-                    TRUTHY = ('1', 't', 'y', 'yes', 'true' )
-
-                    if parameter_value.lower() in FALSY:
-                        parameter_value = False
-
-                    elif parameter_value.lower() in TRUTHY:
-                        parameter_value = True
-
-                    else:
-
-                        self.help(types.SimpleNamespace(verb = verb_name))
-
-                        with ANSI('fg_red'), Indent('[ERROR] ', hanging = True):
-                            log()
-                            log(f'Parameter {parameter_schema.representation} needs to be a boolean; got "{parameter_value}".')
-                            log(f'Truthy values are {', '.join(f'"{x}"' for x in TRUTHY if x)}.')
-                            log(f'Falsy  values are {', '.join(f'"{x}"' for x in FALSY      )}.')
-                            log(f'Values are case-insensitive.')
-
-                        return 1
-
-
-
-                # The argument should've been one of many options.
-
-                case options if UI.__is_option_type(options):
-
-                    if is_a_subclass_of(options, enum.Enum):
-                        options = { option.name : option for option in options }
-
-                    if parameter_value not in options:
-
-                        self.help(types.SimpleNamespace(verb = verb_name))
-
-                        with ANSI('fg_red'), Indent('[ERROR] ', hanging = True):
-                            log()
-                            log(
-                                f'Value "{parameter_value}" is not a valid option for {parameter_schema.representation}; '
-                                f'see the options above.'
-                            )
-                            did_you_mean(parameter_value, options)
-
-                        return 1
-
-                    if isinstance(options, dict):
-                        parameter_value = options[parameter_value]
-
-
-
-                # This parameter's type hasn't been handled yet.
-
-                case unsupported:
-                    raise RuntimeError(f'Unsupported parameter type: {unsupported}.')
-
-
-
-            # Update the parameter with the parsed value.
-
-            parameters[parameter_schema.identifier] = parameter_value
-
-
-
-        # Now we assign parameters with their default value if it hasn't been accounted for yet.
-        # We need to do this after we parsed and validated the parameters so that we can have
-        # default values that can be outside the parameter's specified type (e.g. parameter of
-        # type `int` can have default value of `None`).
-
-        for parameter_schema in verb.parameter_schemas:
-
-            if parameter_schema.identifier in parameters:
-                continue
-
-            if parameter_schema.default is ...:
-
-                self.help(types.SimpleNamespace(verb = verb_name))
-
-                with ANSI('fg_red'), Indent('[ERROR] ', hanging = True):
-                    log()
-                    log(f'Missing required parameter {parameter_schema.representation}; see the verb help above.')
-
-                return 1
-
-            parameters[parameter_schema.identifier] = parameter_schema.default
-
-        parameters = types.SimpleNamespace(**parameters)
-
-
-
-        return self.__execute(lambda: verb.function(parameters, *bypass_args, **bypass_kwargs), verb, parameters)
+        return exit_code
 
 
 
@@ -694,4 +663,23 @@ class UI:
 
 
 
-        return exit_code
+        raise ExitCode(exit_code)
+
+
+
+    # Routine to emit an error message for the user working with the UI.
+
+    def __error(self, reason, did_you_mean_args = None, **help_kwargs):
+
+        if help_kwargs:
+            self.help(types.SimpleNamespace(**help_kwargs))
+
+        with ANSI('fg_red'), Indent('[ERROR] ', hanging = True):
+
+            log()
+            log(reason)
+
+            if did_you_mean_args is not None:
+                did_you_mean(*did_you_mean_args)
+
+        raise ExitCode(1)

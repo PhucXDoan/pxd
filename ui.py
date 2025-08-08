@@ -173,12 +173,6 @@ class UI:
 
 
 
-        # Allow other parts of the code to be able to invoke the help verb directly.
-
-        self.help = help
-
-
-
     # This is where we register new verbs for the UI.
 
     def __call__(self, *arguments):
@@ -672,7 +666,7 @@ class UI:
     def __error(self, reason, did_you_mean_args = None, **help_kwargs):
 
         if help_kwargs:
-            self.help(types.SimpleNamespace(**help_kwargs))
+            self.invoke(['help'])
 
         with ANSI('fg_red'), Indent('[ERROR] ', hanging = True):
 

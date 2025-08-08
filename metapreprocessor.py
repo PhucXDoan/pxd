@@ -1,6 +1,6 @@
-import pathlib, types, contextlib, re, traceback, builtins, sys, copy
+import pathlib, types, contextlib, re, traceback, sys, copy
 from ..pxd.log   import log, ANSI
-from ..pxd.utils import justify, root, deindent, c_repr, mk_dict, find_dupe, coalesce, OrderedSet
+from ..pxd.utils import justify, deindent, c_repr, find_dupe, coalesce, OrderedSet
 
 # TODO Warn on unused symbols.
 

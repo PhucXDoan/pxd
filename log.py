@@ -6,7 +6,7 @@ import contextlib, types
 
 
 
-ANSI_PROPERTIES = {
+ANSI_PROPERTIES = { None : ('', '') } | {
     property : tuple(f'\x1B[{code}m' for code in (enable, disable))
     for enable, disable, *properties in (
         (1  , 22, 'bold'                               ),

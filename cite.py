@@ -1,7 +1,7 @@
 import re, sys, types, pathlib, string, collections, difflib
 from ..pxd.ui    import UI
 from ..pxd.log   import log, ANSI
-from ..pxd.utils import coalesce, root, ljusts, did_you_mean, OrdSet
+from ..pxd.utils import coalesce, root, justify, did_you_mean, OrderedSet
 
 CITATION_TAG = '@' '/' # Written like this so that the script won't accidentally think this is a citation.
 ui           = UI('cite', 'Manage citations within the codebase.')
@@ -523,7 +523,14 @@ def _log_citations(citations, issues):
 
     if citations:
 
-        for citation, ljust in zip(citations, ljusts((citation.file_path, citation.line_number) for citation in citations)):
+        for citation, *justs in justify(
+            (
+                (None, citation            ),
+                ('<' , citation.file_path  ),
+                ('<' , citation.line_number),
+            )
+            for citation in citations
+        ):
 
             match citation.source_usage:
                 case 'definition': source_color = 'bg_blue'
@@ -534,7 +541,7 @@ def _log_citations(citations, issues):
 
             log(
                 '| {} : {} | {}{}{}',
-                *ljust,
+                *justs,
                 ANSI(citation.line[      : start].lstrip(), 'fg_bright_black'   ),
                 ANSI(citation.line[start : end  ]         , 'bold', source_color),
                 ANSI(citation.line[end   :      ].rstrip(), 'fg_bright_black'   ),
@@ -548,11 +555,18 @@ def _log_citations(citations, issues):
 
         log()
 
-        for issue, ljust in zip(issues, ljusts((issue.file_path, issue.line_number) for issue in issues)):
+        for issue, *just in justify(
+            (
+                (None, issue            ),
+                ('<' , issue.file_path  ),
+                ('<' , issue.line_number),
+            )
+            for issue in issues
+        ):
 
             log(
                 ANSI('[WARNING] {} : {} | {}', 'fg_yellow'),
-                *ljust,
+                *just,
                 issue.reason,
             )
 
@@ -631,7 +645,7 @@ def find(parameters):
             _log_citations(all_citations, issues)
             log()
             log(f'No citations associated with that source name was found.')
-            did_you_mean(parameters.source, OrdSet(citation.source_name for citation in all_citations))
+            did_you_mean(parameters.source, OrderedSet(citation.source_name for citation in all_citations))
 
             return 0 # I'm arbitrarily saying no error here.
 
@@ -683,7 +697,7 @@ def find(parameters):
 
     # Actually perform the renaming operation now.
 
-    for file_path, file_citations in coalesce((citation.file_path, citation) for citation in filtered_citations).items():
+    for file_path, file_citations in coalesce((citation.file_path, citation) for citation in filtered_citations):
 
         file_lines = file_path.read_text().splitlines(keepends = True)
 

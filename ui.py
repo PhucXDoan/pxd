@@ -1,5 +1,5 @@
 import builtins, types, enum
-from ..pxd.utils import did_you_mean, find_dupe, OrdSet
+from ..pxd.utils import did_you_mean, find_dupe, OrderedSet
 from ..pxd.log   import log, ANSI, Indent
 
 
@@ -299,7 +299,7 @@ class UI:
 
 
 
-                    if dupe := find_dupe(parameter_schema.identifier for parameter_schema in parameter_schemas):
+                    if (dupe := find_dupe(parameter_schema.identifier for parameter_schema in parameter_schemas)) is not ...:
                         raise RuntimeError(f'Parameter name "{dupe}" used more than once.')
 
 
@@ -661,7 +661,7 @@ class UI:
 
     def __is_option_type(type):
         match type:
-            case list() | tuple() | set() | OrdSet() | dict()        : return True
+            case list() | tuple() | set() | OrderedSet() | dict()    : return True
             case enumeration if UI.__is_enum(enumeration, enum.Enum) : return True
             case _                                                   : return False
 

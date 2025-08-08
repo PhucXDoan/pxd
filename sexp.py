@@ -1,6 +1,5 @@
 import string
-from ..pxd.utils import ErrorLift
-from ..pxd.log   import log
+from ..pxd.log import log
 
 
 

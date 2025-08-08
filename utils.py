@@ -1,120 +1,203 @@
-import math, pathlib, builtins, collections, difflib, __main__
+import types, pathlib, collections, difflib, __main__
+
+
 
 ################################################################################################################################
+#
+# e.g:
+# >
+# >    ('B', 'betty'    )
+# >    ('S', 'said'     )
+# >    ('S', 'she'      )
+# >    ('S', 'sold'     )        ('B', ('betty', 'by'                                      ))
+# >    ('S', 'seashells')   ->   ('S', ('said' , 'she', 'sold', 'seashells', 'sea', 'shore'))
+# >    ('B', 'by'       )        ('T', ('the'  ,                                           ))
+# >    ('T', 'the'      )
+# >    ('S', 'sea'      )
+# >    ('S', 'shore'    )
+# >
+#
 
-def round_up(x, n = 1):
-    return math.ceil(x / n) * n
+def coalesce(items):
 
-################################################################################################################################
+    result = collections.defaultdict(lambda: [])
 
-def coalesce(xs, function = None, find_dupes = False):
+    for key, value in items:
+        result[key] += [value]
 
-    inverse = collections.defaultdict(lambda: [])
+    return tuple((key, tuple(values)) for key, values in result.items())
 
-    for x in xs:
 
-        if function is None:
-            key, value = x
-        else:
-            key, value = function(x), x
-
-        inverse[key] += [value]
-
-    result = { key : tuple(values) for key, values in inverse.items() }
-
-    if find_dupes:
-        result = next((
-            dupes
-            for dupes in result.values()
-            if len(dupes) >= 2
-        ), None)
-
-    return result
 
 ################################################################################################################################
+#
+# e.g:
+# >
+# >    find_dupe((3, 1, 4, None, 5, None, None))
+# >        == None
+# >
+# >    find_dupe(('this', 'is', 'a', 'very', 'very', 'simple', 'example'))
+# >        == 'very'
+# >
+# >    find_dupe(('this', 'is', 'a', 'very', 'simple', 'example'))
+# >        == ...
+# >
+#
 
-def find_dupe(xs):
+def find_dupe(values):
 
     seen = set()
 
-    for x in xs:
-        if x in seen:
-            return x
-        else:
-            seen |= { x }
+    for value in values:
 
-    return None
+        if value in seen:
+            return value
+
+        seen |= { value }
+
+    return ...
+
+
 
 ################################################################################################################################
+
+
 
 def mk_dict(items):
 
     items = tuple(items)
 
-    if dupe_key := find_dupe(key for key, value in items):
-        raise ValueError(ErrorLift(f'Making dict with duplicate key: {repr(dupe_key)}.'))
+    if (dupe := find_dupe(key for key, value in items)) is not ...:
+        raise KeyError(dupe)
 
     return dict(items)
 
+
+
 ################################################################################################################################
 
-def repr_in_c(value):
+
+
+def c_repr(value):
     match value:
         case bool  () : return str(value).lower()
         case float () : return str(int(value) if value.is_integer() else value)
         case None     : return 'none'
         case _        : return str(value)
 
+
+
 ################################################################################################################################
 
-def root(*paths_or_parts):
+
+
+def root(*arguments):
 
     def mk(parts):
         return pathlib.Path(__main__.__file__).parent.joinpath(*parts).relative_to(pathlib.Path.cwd(), walk_up = True)
 
-    match paths_or_parts:
+    match arguments:
 
         case [paths] if isinstance(paths, str) and '\n' in paths:
-            return [mk([path.strip()]) for path in paths.strip().splitlines()]
+            return tuple(mk([path.strip()]) for path in paths.strip().splitlines())
 
         case parts:
             return mk(parts)
 
+
+
 ################################################################################################################################
 
-def ljusts(elems, include_keys = False):
 
-    elems = tuple(elems)
 
-    if all(isinstance(elem, dict) for elem in elems):
-        type = dict
-    elif all(any(isinstance(elem, t) for t in (str, int)) for elem in elems):
-        type  = str
-        elems = tuple({ 0 : str(elem) } for elem in elems)
+def justify(rows):
+
+    rows = tuple(tuple(row) for row in rows)
+
+
+
+    # We will be justifying multiple columns.
+    # > e.g:
+    # >
+    # >    for person, just_name, just_age in justify(
+    # >        (
+    # >            (None, person     ),
+    # >            ('<' , person.name),
+    # >            ('<' , person.age ),
+    # >        )
+    # >        for person in persons
+    # >    ):
+    # >        ...
+    # >
+
+    if all(
+        isinstance(cell, tuple) or isinstance(cell, list)
+        for row  in rows
+        for cell in row
+    ):
+        single_column = False
+
+
+
+    # We will be justifying only one column.
+    # We will go through the same procedure as a multi-column justification
+    # but the yielded value will be unpacked automatically for the user;
+    # this just removes the usage of commas and parentheses a lot.
+    # > e.g:
+    # >
+    # >    for just_name in justify(('<', person.name) for person in persons):
+    # >        ...
+    # >
     else:
-        type  = None
-        elems = tuple({ subelem_i : subelem for subelem_i, subelem in enumerate(elem) } for elem in elems)
+        single_column = True
+        rows          = tuple((row,) for row in rows)
 
-    justs = collections.defaultdict(lambda: 0)
 
-    for elem in elems:
-        for key, value in elem.items():
-            justs[key] = max(justs[key], len(str(value)), len(str(key)) if include_keys else 0)
 
-    elems = tuple(
-        { key : str(value).ljust(justs[key]) for key, value in elem.items() }
-        for elem in elems
-    )
+    # Determine the amount of justification needed for each column.
 
-    match type:
-        case builtins.str  : elems = tuple(tuple(elem.values())[0] for elem in elems)
-        case builtins.dict : pass
-        case None          : elems = tuple(tuple(elem.values()) for elem in elems)
+    column_max_lengths = {
+        column_i : max([0] + [
+            len(str(cell_value))
+            for cell_justification, cell_value in cells
+            if cell_justification is not None # We will leave cells that have justification of `None` untouched.
+        ])
+        for column_i, cells in coalesce(
+            (column_i, cell)
+            for row in rows
+            for column_i, cell in enumerate(row)
+        )
+    }
 
-    if include_keys:
-        return tuple(str(key).ljust(value) for key, value in justs.items()), elems
-    else:
-        return elems
+
+
+    # Justify each row.
+
+    just_rows = []
+
+    for row in rows:
+
+        just_row = []
+
+        for column_i, (cell_justification, cell_value) in enumerate(row):
+
+            match cell_justification:
+                case None : just_row += [    cell_value                                      ]
+                case '<'  : just_row += [str(cell_value).ljust (column_max_lengths[column_i])]
+                case '>'  : just_row += [str(cell_value).rjust (column_max_lengths[column_i])]
+                case '^'  : just_row += [str(cell_value).center(column_max_lengths[column_i])]
+                case _    : raise ValueError(f'Unknown justification: {repr(cell_justification)}.')
+
+        if single_column:
+            just_row, = just_row # Automatically unpack in the case of a single column.
+        else:
+            just_row = tuple(just_row)
+
+        just_rows += [just_row]
+
+    return tuple(just_rows)
+
+
 
 ################################################################################################################################
 
@@ -156,7 +239,7 @@ def deindent(string, *, multilined_string_literal = True, single_line_comment = 
         # We currently only support space indentation.
 
         if line.lstrip(' ').startswith('\t'):
-            raise ValueError(ErrorLift('Only spaces for indentation is allowed.'))
+            raise ValueError('Only spaces for indentation is allowed.')
 
 
 
@@ -213,192 +296,264 @@ def did_you_mean(given, options):
 
 ################################################################################################################################
 
-def Table(header, *entries):
+
+
+def SimpleNamespaceTable(header, *entries):
 
     table = []
 
     for entry_i, entry in enumerate(entries):
 
-        if entry is None:
+        if entry is ...:
             continue # Allows for an entry to be easily omitted.
 
         if len(entry) != len(header):
-            raise ValueError(ErrorLift(f'Row {entry_i + 1} has {len(entry)} entries but the header defines {len(header)} columns.'))
+            raise ValueError(f'Row {entry_i + 1} has {len(entry)} entries but the header defines {len(header)} columns.')
 
-        table += [Obj(dict(zip(header, entry)))]
+        table += [types.SimpleNamespace(**dict(zip(header, entry)))]
 
     return table
 
+
+
 ################################################################################################################################
 
-class OrdSet:
+
+
+class OrderedSet:
+
+
 
     def __init__(self, given = ()):
-        self.elems = tuple(dict.fromkeys(given).keys())
+        self.elements = tuple(dict.fromkeys(given).keys())
+
+
 
     def __repr__(self):
-        if self.elems:
-            return f'OrdSet({', '.join(map(repr, self.elems))})'
+        if self.elements:
+            return f'OrderedSet({', '.join(map(repr, self.elements))})'
         else:
             return '{}'
+
+
 
     def __str__(self):
         return repr(self)
 
+
+
     def __iter__(self):
-        for elem in self.elems:
-            yield elem
+        for element in self.elements:
+            yield element
+
+
 
     def __or__(self, others):
-        return OrdSet((*self.elems, *others))
+        return OrderedSet((*self.elements, *others))
+
+
 
     def __rsub__(self, others):
-        return OrdSet(other for other in others if other not in self.elems)
+        return OrderedSet(other for other in others if other not in self.elements)
+
+
 
     def __sub__(self, others):
-        return OrdSet(elem for elem in self.elems if elem not in others)
+        return OrderedSet(element for element in self.elements if element not in others)
+
+
 
     def __getitem__(self, key):
-        return self.elems[key]
+        return self.elements[key]
+
+
 
     def __len__(self):
-        return len(self.elems)
+        return len(self.elements)
+
+
 
     def __bool__(self):
-        return bool(self.elems)
+        return bool(self.elements)
+
+
 
     def __eq__(self, other):
         match other:
             case None : return False
             case _    : return set(self) == set(other)
 
+
+
 ################################################################################################################################
 
-class Obj:
+
+
+class ContainedNamespace:
+
+
 
     def __init__(self, given = None, **fields):
 
         if given is not None and fields:
-            raise ValueError(ErrorLift('Obj cannot be initialized using an argument and keyword-arguments at the same time.'))
+            raise ValueError('Cannot initialize using an argument and keyword-arguments at the same time.')
 
         match given:
-            case None     : items = fields.items()
-            case dict()   : items = given.items()
-            case Record() : items = given.__dict__.items()
-            case tuple()  : items = dict.fromkeys(given).items()
-            case list()   : items = dict.fromkeys(given).items()
-            case _        : raise TypeError(ErrorLift(f'Obj can\'t be made with {type(given)}: {repr(given)}.'))
+            case None                  : items = fields.items()
+            case dict()                : items = given.items()
+            case AllocatingNamespace() : items = given.__dict__.items()
+            case tuple()               : items = dict.fromkeys(given).items()
+            case list()                : items = dict.fromkeys(given).items()
+            case _                     : raise TypeError(f'Unsupported type: {type(given)}.')
 
         for key, value in items:
             self.__dict__[key] = value
 
+
+
     def __len__(self):
         return len(self.__dict__)
 
+
+
     def __getattr__(self, key):
-        raise AttributeError(ErrorLift(f'No field (.{key}) to read.'))
+        raise AttributeError(f'No field (.{key}) to read.')
+
+
 
     def __setattr__(self, key, value):
         if key in self.__dict__:
             self.__dict__[key] = value
         else:
-            raise AttributeError(ErrorLift(f'No field (.{key}) to write.'))
+            raise AttributeError(f'No field (.{key}) to write.')
+
+
 
     def __getitem__(self, key):
         if key in self.__dict__:
             return self.__dict__[key]
         else:
-            raise AttributeError(ErrorLift(f'No field ["{key}"] to read.'))
+            raise AttributeError(f'No field ["{key}"] to read.')
+
+
 
     def __setitem__(self, key, value):
         if key in self.__dict__:
             self.__dict__[key] = value
             return value
         else:
-            raise AttributeError(ErrorLift(f'No field ["{key}"] to write.'))
+            raise AttributeError(f'No field ["{key}"] to write.')
+
+
 
     def __iter__(self):
         for name, value in self.__dict__.items():
             yield (name, value)
 
+
+
     def __str__(self):
-        return f'Obj({ ', '.join(f'{repr(key)}={repr(value)}' for key, value in self) })'
+        return f'ContainedNamespace({ ', '.join(f'{repr(key)}={repr(value)}' for key, value in self) })'
+
+
 
     def __repr__(self):
         return str(self)
 
+
+
     def __contains__(self, key):
         return key in self.__dict__
 
+
+
 ################################################################################################################################
 
-class Record:
+
+
+class AllocatingNamespace:
+
+
 
     def __init__(self, given = None, **fields):
 
         if given is not None and fields:
-            raise ValueError(ErrorLift('Record cannot be initialized using an argument and keyword-arguments at the same time.'))
+            raise ValueError('Cannot initialize using an argument and keyword-arguments at the same time.')
 
         match given:
-            case None    : items = fields.items()
-            case dict()  : items = given.items()
-            case Obj()   : items = given.__dict__.items()
-            case tuple() : items = dict.fromkeys(given).items()
-            case list()  : items = dict.fromkeys(given).items()
-            case _       : raise TypeError(ErrorLift(f'Record can\'t be made with {type(given)}: {repr(given)}.'))
+            case None                 : items = fields.items()
+            case dict()               : items = given.items()
+            case ContainedNamespace() : items = given.__dict__.items()
+            case tuple()              : items = dict.fromkeys(given).items()
+            case list()               : items = dict.fromkeys(given).items()
+            case _                    : raise TypeError(f'Unsupported type: {type(given)}.')
 
         for key, value in items:
             self.__dict__[key] = value
 
+
+
     def __len__(self):
         return len(self.__dict__)
 
+
+
     def __getattr__(self, key):
-        raise AttributeError(ErrorLift(f'No field (.{key}) to read.'))
+        raise AttributeError(f'No field (.{key}) to read.')
+
+
 
     def __setattr__(self, key, value):
         if key in self.__dict__:
-            raise AttributeError(ErrorLift(f'Field (.{key}) already exists.'))
+            raise AttributeError(f'Field (.{key}) already exists.')
         else:
             self.__dict__[key] = value
+
+
 
     def __getitem__(self, key):
         if key in self.__dict__:
             return self.__dict__[key]
         else:
-            raise AttributeError(ErrorLift(f'No field ["{key}"] to read.'))
+            raise AttributeError(f'No field ["{key}"] to read.')
+
+
 
     def __setitem__(self, key, value):
         if key in self.__dict__:
-            raise AttributeError(ErrorLift(f'Field ["{key}"] already exists.'))
+            raise AttributeError(f'Field ["{key}"] already exists.')
         else:
             self.__dict__[key] = value
             return value
+
+
 
     def __iter__(self):
         for name, value in self.__dict__.items():
             yield (name, value)
 
+
+
     def __str__(self):
-        return f'Record({ ', '.join(f'{repr(key)}={repr(value)}' for key, value in self) })'
+        return f'AllocatingNamespace({ ', '.join(f'{repr(key)}={repr(value)}' for key, value in self) })'
+
+
 
     def __repr__(self):
         return str(self)
 
+
+
     def __contains__(self, key):
         return key in self.__dict__
+
+
 
     def __or__(self, other):
 
         match other:
-            case dict() : items = other
-            case Obj()  : items = other.__dict__
-            case _:
-                raise TypeError(ErrorLift(f'Record cannot be combined with a {type(other)}: {other}.'))
+            case dict()               : items = other
+            case ContainedNamespace() : items = other.__dict__
+            case _                    : raise TypeError(f'Unsupported type: {type(other)}.')
 
-        return Record(**self.__dict__, **items)
-
-################################################################################################################################
-
-class ErrorLift(str):
-    pass
+        return AllocatingNamespace(**self.__dict__, **items)

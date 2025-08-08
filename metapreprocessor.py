@@ -1,6 +1,6 @@
 import pathlib, types, contextlib, re, traceback, builtins, sys, copy
-from ..pxd.log   import log
-from ..pxd.utils import ljusts, root, deindent, repr_in_c, mk_dict, find_dupe, coalesce, Obj, Record, OrdSet, ErrorLift
+from ..pxd.log   import log, ANSI
+from ..pxd.utils import justify, root, deindent, c_repr, mk_dict, find_dupe, coalesce, OrderedSet
 
 # TODO Warn on unused symbols.
 
@@ -118,7 +118,7 @@ class __META__:
                 # >
                 #
 
-                argument_list = OrdSet(parameters) - OrdSet(overloading)
+                argument_list = OrderedSet(parameters) - overloading
 
                 if argument_list : argument_list = f'({', '.join(argument_list)})'
                 else             : argument_list = ''
@@ -414,10 +414,10 @@ class __META__:
             for member_i, member in enumerate(self.members):
 
                 match member:
-                    case (name, value) : value = repr_in_c(value)
+                    case (name, value) : value = c_repr(value)
                     case  name         : value = ...
 
-                self.members[member_i] = (f'{self.enum_name}_{repr_in_c(name)}', value)
+                self.members[member_i] = (f'{self.enum_name}_{c_repr(name)}', value)
 
 
 
@@ -425,11 +425,17 @@ class __META__:
 
             with self.meta.enter(f'enum {self.enum_name}{enum_type_suffix}'):
 
-                for member, ljust_name in zip(self.members, ljusts(name for name, value in self.members)):
-
-                    match member:
-                        case (name, builtins.Ellipsis) : self.meta.line(f'{name},'                )
-                        case (name, value            ) : self.meta.line(f'{ljust_name} = {value},')
+                for value, just_name in justify(
+                    (
+                        (None, value),
+                        ('<' , name ),
+                    )
+                    for name, value in self.members
+                ):
+                    if value is ...:
+                        self.meta.line(f'{name},')
+                    else:
+                        self.meta.line(f'{just_name} = {value},')
 
 
 
@@ -572,13 +578,13 @@ class __META__:
 
             # To C values.
 
-            overloading = { key : repr_in_c(value) for key, value in overloading.items() }
+            overloading = { key : c_repr(value) for key, value in overloading.items() }
 
 
 
             # Some coherency checks.
 
-            if differences := OrdSet(overloading) - OrdSet(parameters):
+            if differences := OrderedSet(overloading) - parameters:
                 raise ValueError(f'Overloading a macro ("{name}") on the parameter "{differences[0]}", but it\'s not in the parameter-list: {parameters}.')
 
             if name in self.overloads and self.overloads[name] != (parameters, tuple(overloading.keys())):
@@ -596,7 +602,7 @@ class __META__:
             # The name and parameters of this single macro instance itself.
 
             name       = f'MACRO_OVERLOAD__{name}__{'__'.join(map(str, overloading.values()))}'
-            parameters = list(OrdSet(parameters) - OrdSet(overloading)) or None
+            parameters = list(OrderedSet(parameters) - overloading) or None
 
 
 
@@ -611,7 +617,7 @@ class __META__:
 
         # Format the macro's expansion.
 
-        expansion = deindent(repr_in_c(expansion))
+        expansion = deindent(c_repr(expansion))
 
 
 
@@ -715,7 +721,7 @@ class __META__:
                 try:
                     condition = next(iterator)
                 except StopIteration:
-                    raise RuntimeError(ErrorLift("The function didn't yield for the condition of the if-statement."))
+                    raise RuntimeError("The function didn't yield for the condition of the if-statement.")
 
 
 
@@ -728,7 +734,7 @@ class __META__:
                     case _, '#if'     : entrance = (f'#if {condition}'      , None, None                               )
                     case 0, '#elif'   : entrance = (f'#if {condition}'      , None, '#endif' if len(items) == 1 else '')
                     case _, '#elif'   : entrance = (f'#elif {condition}'    , None, None                               )
-                    case _            : raise ValueError(ErrorLift(f'Unknown if-statement style of "{style}".'))
+                    case _            : raise ValueError(f'Unknown if-statement style of "{style}".')
 
 
 
@@ -744,7 +750,7 @@ class __META__:
                         stopped = True
 
                     if not stopped:
-                        raise RuntimeError(ErrorLift('The function should only yield once to make the if-statement.'))
+                        raise RuntimeError('The function should only yield once to make the if-statement.')
 
 
 
@@ -798,8 +804,8 @@ class __META__:
         # >
 
         if all(entry and not isinstance(entry[0], tuple) for entry in entries):
-            indices = [repr_in_c(index) for index, *fields in entries]
-            entries = [fields           for index, *fields in entries]
+            indices = [c_repr(index) for index, *fields in entries]
+            entries = [fields        for index, *fields in entries]
 
 
 
@@ -839,7 +845,7 @@ class __META__:
             case (table_type, table_name):
 
                 values = [
-                    [f'.{name} = {repr_in_c(value)}' for name, value in entry]
+                    [f'.{name} = {c_repr(value)}' for name, value in entry]
                     for entry in entries
                 ]
 
@@ -863,7 +869,7 @@ class __META__:
 
             case table_name:
 
-                members = OrdSet(
+                members = OrderedSet(
                     f'{type} {name};'
                     for entry in entries
                     for type, name, value in entry
@@ -872,7 +878,7 @@ class __META__:
                 table_type = f'struct {{ {' '.join(members)} }}'
 
                 values = [
-                    [repr_in_c(value) for type, name, value in entry]
+                    [c_repr(value) for type, name, value in entry]
                     for entry in entries
                 ]
 
@@ -885,21 +891,27 @@ class __META__:
 
         # Some coherency checks.
 
-        if indices is not None and (dupe := find_dupe(indices)) is not None:
-            raise ValueError(ErrorLift(f'Look-up table has duplicate index of "{dupe}".'))
+        if indices is not None and (dupe := find_dupe(indices)) is not ...:
+            raise ValueError(f'Look-up table has duplicate index of "{dupe}".')
 
         for field_names in field_names_per_entry:
-            if (dupe := find_dupe(field_names)) is not None:
-                raise ValueError(ErrorLift(f'Look-up table has an entry with duplicate field of "{dupe}".'))
+            if (dupe := find_dupe(field_names)) is not ...:
+                raise ValueError(f'Look-up table has an entry with duplicate field of "{dupe}".')
 
 
 
         # Output the look-up table.
 
-        lines = ['{ ' + ', '.join(value) + ' },' for value in ljusts(values)]
+        lines = [ # TODO Ugly.
+            '{ ' + ', '.join(just_values) + ' },'
+            for just_values in justify(
+                (('<', value) for value in row)
+                for row in values
+            )
+        ]
 
         if indices is not None:
-            lines = [f'[{index}] = {value}' for index, value in zip(ljusts(indices), lines)]
+            lines = [f'[{index}] = {value}' for index, value in zip(justify(('<', index) for index in indices), lines)]
 
         with self.enter(f'static const {table_type} {table_name}[] ='):
             self.line(lines)
@@ -1105,7 +1117,7 @@ def do(*,
                 # We're find with duplicate symbols;
                 # doesn't really affect anything besides being redundant.
 
-                ports[port_i] = OrdSet(symbols)
+                ports[port_i] = OrderedSet(symbols)
 
 
 
@@ -1190,31 +1202,31 @@ def do(*,
 
 
 
-    if dupes := coalesce((
+    for include_directive_file_path, meta_directives_of_include_directive_file_path in coalesce(
         (meta_directive.include_directive_file_path, meta_directive)
         for meta_directive in meta_directives
         if meta_directive.include_directive_file_path is not None
-    ), find_dupes = True):
+    ):
+        if len(meta_directives_of_include_directive_file_path) >= 2:
+            raise MetaError(
+                f'# Meta-directives with the same output file path of "{include_directive_file_path}": ' \
+                f'[{meta_directives_of_include_directive_file_path[0].source_file_path}:{meta_directives_of_include_directive_file_path[0].include_directive_line_number}] and ' \
+                f'[{meta_directives_of_include_directive_file_path[1].source_file_path}:{meta_directives_of_include_directive_file_path[1].include_directive_line_number}].'
+            )
 
-        raise MetaError(
-            f'# Meta-directives with the same output file path of "{dupes[0].include_directive_file_path}": ' \
-            f'[{dupes[0].source_file_path}:{dupes[0].include_directive_line_number}] and ' \
-            f'[{dupes[1].source_file_path}:{dupes[1].include_directive_line_number}].'
-        )
 
 
-
-    if dupes := coalesce((
+    for symbol, meta_directives_of_symbol in coalesce(
         (symbol, meta_directive)
         for meta_directive in meta_directives
         for symbol in meta_directive.exports
-    ), find_dupes = True):
+    ):
+        if len(meta_directives_of_symbol) >= 2:
+            raise MetaError(f'# Multiple meta-directives export the symbol "{symbol}".')
 
-        raise MetaError(f'# Multiple meta-directives export the symbol "{symbol}".')
 
 
-
-    all_exports = OrdSet(
+    all_exports = OrderedSet(
         export
         for meta_directive in meta_directives
         for export         in meta_directive.exports
@@ -1258,7 +1270,7 @@ def do(*,
     # If the meta-directive explicitly imports nothing, then its exports will
     # globally be implicitly imported into every other meta-directive.
 
-    implicit_global_import = OrdSet(
+    implicit_global_import = OrderedSet(
         symbol
         for meta_directive in meta_directives
         if meta_directive.global_exporter
@@ -1278,7 +1290,7 @@ def do(*,
 
     remaining_meta_directives = meta_directives
     meta_directives           = []
-    available_symbols         = OrdSet()
+    available_symbols         = OrderedSet()
 
     while remaining_meta_directives:
 
@@ -1518,10 +1530,10 @@ def do(*,
             # Spacer.
 
             if stack_i:
-                log(' ' * line_number_just + ' .'                           )
-                log(' ' * line_number_just + ' . ', end = ''                )
-                log('.' * 150                     , ansi = 'fg_bright_black')
-                log(' ' * line_number_just + ' .'                           )
+                log(' ' * line_number_just + ' .')
+                log(' ' * line_number_just + ' . ', end = '')
+                log(ANSI('.' * 150, 'fg_bright_black'))
+                log(' ' * line_number_just + ' .')
 
 
 
@@ -1531,19 +1543,19 @@ def do(*,
 
             for line_delta, line in stack.lines:
 
-                with log(ansi = 'bold' if line_delta == 0 else None): # TODO Allow end = ''.
+                with ANSI('bold' if line_delta == 0 else None): # TODO Allow end = ''.
 
                     line_number = stack.line_number + line_delta
 
-                    log(f'{str(line_number).rjust(line_number_just)} |', end  = ''                                             )
-                    log(f' {line}'                                     , ansi = 'bg_red' if line_delta == 0 else None, end = '')
+                    log(f'{str(line_number).rjust(line_number_just)} |', end  = '')
+                    log(ANSI(f' {line}', 'bg_red' if line_delta == 0 else None), end = '')
 
                     if line_delta == 0:
 
-                        log(f' <- {stack.file_path} : {line_number}', ansi = 'fg_yellow', end = '')
+                        log(ANSI(f' <- {stack.file_path} : {line_number}', 'fg_yellow'), end = '')
 
                         if stack.function_name is not None:
-                            log(f' : {stack.function_name}', ansi = 'fg_yellow', end = '')
+                            log(ANSI(f' : {stack.function_name}', 'fg_yellow'), end = '')
 
                     log()
 
@@ -1555,7 +1567,7 @@ def do(*,
 
         # Log the reason.
 
-        with log(ansi = 'fg_red'):
+        with ANSI('fg_red'):
 
             match error:
 

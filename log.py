@@ -147,7 +147,7 @@ def Indent(characters = ' ' * 4, hanging = False):
 
 def log(*arguments, end = ..., clear = False):
 
-    global _on_start_of_line
+    global _on_start_of_line, last_line_ends_with_linefeed
 
 
 
@@ -206,7 +206,10 @@ def log(*arguments, end = ..., clear = False):
     # >            This makes it easy to do multi-lined things.
     # >
 
-    global last_line_ends_with_linefeed
+    if end is ...:
+        end = None
+
+    value = str(value) + ('\n' if end is None else end)
 
     lines = value.splitlines(keepends = True)
 
@@ -229,11 +232,6 @@ def log(*arguments, end = ..., clear = False):
 
 
     # Finally print!
-
-    if end is ...:
-        end = None
-
-    value = str(value) + ('\n' if end is None else end)
 
     print(value, end = '')
 

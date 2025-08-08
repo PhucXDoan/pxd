@@ -215,9 +215,6 @@ def log(*arguments, end = ..., clear = False):
         if line_i == 0 and not _on_start_of_line:
             continue # The row we're currently on is already indented.
 
-        if not lines[line_i].strip():
-            continue # No need to indent.
-
         for indent in reversed(_indent_stack):
 
             characters = indent.characters

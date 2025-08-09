@@ -213,6 +213,9 @@ def log(*arguments, end = ..., clear = False):
 
     lines = value.splitlines(keepends = True)
 
+    if not lines:
+        lines = ['']
+
     for line_i in range(len(lines)):
 
         if line_i == 0 and not _on_start_of_line:

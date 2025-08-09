@@ -241,6 +241,52 @@ class UI:
 
 
 
+                    # The verb can then provide even more information on the user side.
+
+                    match verb.help:
+
+
+
+                        # Nothing additional for the verb to add.
+
+                        case None:
+                            pass
+
+
+
+                        # We let the verb extend the help display with additional information of its own.
+                        #
+                        # Note that for the verb to throw a non-zero exit code would be weird,
+                        # so I'm not sure this is the best way to handle it,
+                        # but this is what we'll do for now.
+
+                        case builtins.Ellipsis:
+
+                            log()
+
+                            with Indent():
+                                try:
+                                    verb_parameters = types.SimpleNamespace(help = True)
+                                    exit_code       = self.__execute(
+                                        lambda: verb.function(verb_parameters),
+                                        verb,
+                                        verb_parameters
+                                    )
+                                except ExitCode as error:
+                                    exit_code, = error.args
+
+                            if exit_code:
+                                raise ExitCode(exit_code)
+
+
+
+                        # Unknown verb help type.
+
+                        case unsupported:
+                            raise RuntimeError(f'Unsupported verb help: {repr(unsupported)}.')
+
+
+
     # This is where we register new verbs for the UI.
 
     def __call__(self, *arguments):
@@ -280,16 +326,6 @@ class UI:
                 parameter_schemas = list(parameter_schemas)
 
                 def decorator(function):
-
-
-
-                    # Parse the verb's schema.
-
-                    verb_name       = verb_schema.pop('name', function.__name__)
-                    verb_decription = verb_schema.pop('description')
-
-                    if verb_schema:
-                        raise RuntimeError(f'Leftover verb schema: {verb_schema}.')
 
 
 
@@ -350,17 +386,23 @@ class UI:
 
 
 
-                    # Save the verb into the collection.
+                    # Parse the verb's schema.
+
+                    verb_name = verb_schema.pop('name', function.__name__)
 
                     if verb_name in self.verbs:
                         raise RuntimeError(f'Verb by the name of "{verb_name}" defined more than once.')
 
                     self.verbs[verb_name] = types.SimpleNamespace(
                         name              = verb_name,
-                        description       = verb_decription,
+                        description       = verb_schema.pop('description'),
                         parameter_schemas = parameter_schemas,
                         function          = function,
+                        help              = verb_schema.pop('help', None),
                     )
+
+                    if verb_schema:
+                        raise RuntimeError(f'Leftover verb schema: {verb_schema}.')
 
 
 
@@ -679,9 +721,21 @@ class UI:
 
                 parameters[parameter_schema.identifier] = parameter_schema.default
 
-            parameters = types.SimpleNamespace(**parameters)
 
 
+            # If the verb has things to add to the help display,
+            # tell it we're not currently expecting it to give that information right now.
+
+            if verb.help is not None:
+
+                assert 'help' not in parameters
+                parameters['help'] = False
+
+
+
+            # Finally, execute the verb!
+
+            parameters = types.SimpleNamespace(parameters)
 
             self.__execute(
                 lambda: verb.function(parameters, *bypass_args, **bypass_kwargs),

@@ -140,14 +140,21 @@ class UI:
                     if parameters.verb in (None, 'all'):
                         log()
 
-                    parts = ['>', *self.invoke_parents, self.name, verb.name]
+                    parts = []
 
                     if isinstance(verb, UI):
                         parts += ['[subverb]', '(subparameters...)']
                     else:
                         parts += [parameter_schema.representation for parameter_schema in verb.parameter_schemas]
 
-                    log(ANSI(' '.join(parts), 'bold', 'underline'))
+                    log(end = '')
+                    with ANSI('bold', 'underline'):
+                        log(
+                            '> {} {} {}',
+                            ' '.join([*self.invoke_parents, self.name]),
+                            ANSI(verb.name, 'bold', 'fg_green'),
+                            ' '.join(parts)
+                        )
 
                     description = verb.description
 

@@ -757,9 +757,9 @@ class UI:
         if help_verb is not ...:
             self.invoke(['help'] if help_verb is None else ['help', help_verb])
 
+        log()
         with ANSI('fg_red'), Indent('[ERROR] ', hanging = True):
 
-            log()
             log(reason)
 
             if did_you_mean_args is not None:

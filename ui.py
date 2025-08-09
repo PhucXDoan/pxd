@@ -203,11 +203,28 @@ class UI:
                             with Indent():
 
 
+                                match parameter_schema.default:
 
-                                # Show the parameter's default value.
 
-                                if parameter_schema.default is not ...:
-                                    log(f'= {parameter_schema.default}')
+
+                                    # No default parameter value to show.
+
+                                    case builtins.Ellipsis:
+                                        pass
+
+
+
+                                    # Understandable default value we can show.
+
+                                    case str() | int() | float() | bool():
+                                        log(f'= {parameter_schema.default}')
+
+
+
+                                    # Anything else might be too complicated to show.
+
+                                    case _:
+                                        log(f'= (optional)')
 
 
 

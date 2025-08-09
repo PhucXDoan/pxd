@@ -2,8 +2,6 @@ import pathlib, types, contextlib, re, traceback, sys, copy
 from ..pxd.log   import log, ANSI, Indent
 from ..pxd.utils import justify, deindent, c_repr, find_dupe, coalesce, OrderedSet
 
-# TODO Warn on unused symbols.
-
 
 
 ################################################################################################################################
@@ -178,7 +176,7 @@ class __META__:
         def wrapper(self, *args, **kwargs):
 
             if self.meta_directive.include_directive_file_path is None:
-                raise RuntimeError('Meta used in a meta-directive that has no associated include file path.')
+                raise RuntimeError('Using `Meta` to generate code is only allowed when the meta-directives has an include-directive.')
 
             return function(self, *args, **kwargs)
 
@@ -497,7 +495,7 @@ class __META__:
         def __enter__(self):
 
             if self.members is not None:
-                raise ValueError('Cannot use Meta.enums in a with-context when members are already provided: {self.members}.')
+                raise ValueError('Cannot use `Meta.enums` as a context-manager when members are already provided.')
 
             self.members = []
 
@@ -711,10 +709,10 @@ class __META__:
             # Some coherency checks.
 
             if differences := OrderedSet(overloading) - parameters:
-                raise ValueError(f'Overloading a macro ("{name}") on the parameter "{differences[0]}", but it\'s not in the parameter-list: {parameters}.')
+                raise ValueError(f'Overloaded argument "{differences[0]}" not in macro\'s parameter-list.')
 
             if name in self.overloads and self.overloads[name] != (parameters, tuple(overloading.keys())):
-                raise ValueError(f'Cannot overload a macro ("{name}") with differing overloaded parameters.')
+                raise ValueError(f'This overloaded macro instance has a different parameter-list from others.')
 
 
 
@@ -834,7 +832,7 @@ class __META__:
 
         items = tuple(items)
 
-        def decorator(func):
+        def decorator(function):
 
             for item_i, item in enumerate(items):
 
@@ -842,12 +840,15 @@ class __META__:
 
                 # First iteration of the function should give us the condition of the if-statement.
 
-                iterator = func(item)
+                iterator = function(item)
+
+                if not isinstance(iterator, types.GeneratorType):
+                    raise RuntimeError('The decorated function must be a generator.')
 
                 try:
                     condition = next(iterator)
                 except StopIteration:
-                    raise RuntimeError("The function didn't yield for the condition of the if-statement.")
+                    raise RuntimeError('The function did not yield the condition of the if-statement.')
 
 
 
@@ -860,7 +861,7 @@ class __META__:
                     case _, '#if'     : entrance = (f'#if {condition}'      , None, None                               )
                     case 0, '#elif'   : entrance = (f'#if {condition}'      , None, '#endif' if len(items) == 1 else '')
                     case _, '#elif'   : entrance = (f'#elif {condition}'    , None, None                               )
-                    case _            : raise ValueError(f'Unknown if-statement style of "{style}".')
+                    case _            : raise ValueError(f'Unknown if-statement style: {repr(style)}.')
 
 
 
@@ -876,7 +877,7 @@ class __META__:
                         stopped = True
 
                     if not stopped:
-                        raise RuntimeError('The function should only yield once to make the if-statement.')
+                        raise RuntimeError('The decorated function did not return.')
 
 
 
@@ -1018,11 +1019,11 @@ class __META__:
         # Some coherency checks.
 
         if indices is not None and (dupe := find_dupe(indices)) is not ...:
-            raise ValueError(f'Look-up table has duplicate index of "{dupe}".')
+            raise ValueError(f'Duplicate index: {repr(dupe)}.')
 
         for field_names in field_names_per_entry:
             if (dupe := find_dupe(field_names)) is not ...:
-                raise ValueError(f'Look-up table has an entry with duplicate field of "{dupe}".')
+                raise ValueError(f'Duplicate field: {repr(dupe)}.')
 
 
 
@@ -1338,17 +1339,13 @@ def do(*,
             raise MetaError(
                 [
                     types.SimpleNamespace(
-                        file_path     = meta_directives_of_include_directive_file_path[0].source_file_path,
-                        line_number   = meta_directives_of_include_directive_file_path[0].include_directive_line_number,
+                        file_path     = meta_directive.source_file_path,
+                        line_number   = meta_directive.include_directive_line_number,
                         function_name = None,
-                    ),
-                    types.SimpleNamespace(
-                        file_path     = meta_directives_of_include_directive_file_path[1].source_file_path,
-                        line_number   = meta_directives_of_include_directive_file_path[1].include_directive_line_number,
-                        function_name = None,
-                    ),
+                    )
+                    for meta_directive in meta_directives_of_include_directive_file_path
                 ],
-                RuntimeError(f'Meta-directives with the same output file path of "{include_directive_file_path}".')
+                RuntimeError(f'Meta-directives with the same output file path: "{include_directive_file_path}".')
             )
 
 
@@ -1362,15 +1359,11 @@ def do(*,
             raise MetaError(
                 [
                     types.SimpleNamespace(
-                        file_path     = meta_directives_of_symbol[0].source_file_path,
-                        line_number   = meta_directives_of_symbol[0].meta_header_line_number,
+                        file_path     = meta_directive.source_file_path,
+                        line_number   = meta_directive.meta_header_line_number,
                         function_name = None,
-                    ),
-                    types.SimpleNamespace(
-                        file_path     = meta_directives_of_symbol[1].source_file_path,
-                        line_number   = meta_directives_of_symbol[1].meta_header_line_number,
-                        function_name = None,
-                    ),
+                    )
+                    for meta_directive in meta_directives_of_symbol
                 ],
                 RuntimeError(f'Multiple meta-directives export the symbol "{symbol}".')
             )
@@ -1503,7 +1496,7 @@ def do(*,
                     for meta_directive in remaining_meta_directives
                     if meta_directive.explicit_imports
                 ],
-                RuntimeError(f'Meta-directive has a circular import dependency.')
+                RuntimeError(f'Meta-directives with circular dependency.')
             )
 
 
@@ -1534,9 +1527,18 @@ def do(*,
 
             if callback is None:
                 callback_iterator = None
+
             else:
+
                 callback_iterator = callback(current_meta_directive_index, meta_directives)
-                next(callback_iterator)
+
+                if not isinstance(callback_iterator, types.GeneratorType):
+                    raise RuntimeError('Callback must be a generator.')
+
+                try:
+                    next(callback_iterator)
+                except StopIteration:
+                    raise RuntimeError('The callback did not yield.')
 
 
 
@@ -1604,7 +1606,7 @@ def do(*,
                     stopped = True
 
                 if not stopped:
-                    raise RuntimeError('Callback did not return.')
+                    raise RuntimeError('The callback did not return.')
 
 
 
@@ -1635,15 +1637,20 @@ def do(*,
 
 
 
-            # Likely a meta-directive that caused this syntax error;
-            # otherwise, probably something else obscure (e.g. meta-directive running `exec` or importing).
+            # Most likely a meta-directive caused this syntax error.
 
             case SyntaxError():
 
-                if not (match := [meta_directive for meta_directive in meta_directives if meta_directive.bytecode_name == error.filename]):
-                    raise
+                meta_directive = [
+                    meta_directive
+                    for meta_directive in meta_directives
+                    if meta_directive.bytecode_name == error.filename
+                ]
 
-                meta_directive, = match
+                if not meta_directive:
+                    raise # Syntax error somewhere else obscure (e.g. meta-directive running `exec` or importing).
+
+                meta_directive, = meta_directive
 
                 contexts += [types.SimpleNamespace(
                     file_path     = meta_directive.source_file_path,
@@ -1675,8 +1682,14 @@ def do(*,
 
                 for trace in traces:
 
-                   if match := [meta_directive for meta_directive in meta_directives if meta_directive.bytecode_name == trace.filename]:
-                       meta_directive,     = match
+                   meta_directive = [
+                       meta_directive
+                       for meta_directive in meta_directives
+                       if meta_directive.bytecode_name == trace.filename
+                    ]
+
+                   if meta_directive:
+                       meta_directive,     = meta_directive
                        context_file_path   = meta_directive.source_file_path
                        context_line_number = (meta_directive.meta_header_line_number + 1) + trace.lineno - meta_directive.body_line_number
                    else:
@@ -1686,7 +1699,7 @@ def do(*,
                    contexts += [types.SimpleNamespace(
                        file_path     = context_file_path,
                        line_number   = context_line_number,
-                       function_name = '<meta-directive>' if trace.name == '__META_DIRECTIVE__' else trace.name,
+                       function_name = '#meta' if trace.name == '__META_DIRECTIVE__' else trace.name,
                    )]
 
 
@@ -1770,13 +1783,11 @@ def do(*,
 
     output_directory_path.mkdir(parents = True, exist_ok = True)
 
-    try:
 
-        globals = { '__META_DECORATOR__' : __META_DECORATOR__, '__META_GLOBALS__' : {} }
+    globals = { '__META_DECORATOR__' : __META_DECORATOR__, '__META_GLOBALS__' : {} }
 
-        for meta_directive in meta_directives:
-
+    for meta_directive in meta_directives:
+        try:
             exec(meta_directive.bytecode, globals, {})
-
-    except Exception as error:
-        diagnose(error)
+        except Exception as error:
+            diagnose(error)

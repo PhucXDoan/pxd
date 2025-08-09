@@ -43,11 +43,16 @@ def _get_file_paths():
     def is_ignored(file_path):
 
         for pattern in citeignore_entries:
+            if pattern.startswith('!') and pattern.endswith('/'):
+                if pathlib.Path(pattern.removeprefix('!')).as_posix() in file_path.as_posix():
+                    return False
+
+        for pattern in citeignore_entries:
             if pattern.startswith('*.'):
                 if file_path.match(pattern):
                     return True
             elif pattern.endswith('/'):
-                if any(part == pattern.removesuffix('/') for part in file_path.parts):
+                if pathlib.Path(pattern).as_posix() in file_path.as_posix():
                     return True
             else:
                 assert False, f'Unsupported pattern: {pattern}'

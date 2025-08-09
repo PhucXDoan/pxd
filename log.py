@@ -207,7 +207,7 @@ def log(*arguments, end = ..., clear = False):
     # >    ''')
     # >
 
-    if value.startswith('\n'):
+    if value.startswith('\n'): # @/`Known Issue: ANSI Confuses Deindentation`.
 
         value = deindent(value)
 
@@ -260,3 +260,29 @@ def log(*arguments, end = ..., clear = False):
     print(value, end = '')
 
     _on_start_of_line = value.endswith('\n')
+
+
+################################################################################################################################
+
+# @/`Known Issue: ANSI Confuses Deindentation`:
+#
+# The following works as expected:
+# >
+# >    with ANSI('fg_red'):
+# >        log('''
+# >            ...
+# >            ...
+# >            ...
+# >        ''')
+# >
+#
+# But not this, because as of writing, `log` only performs deindenting
+# if the value beings with a newline, but ANSI injects some code into the start and
+# end, so it confuses things a bit.
+# >
+# >    log(ANSI('''
+# >        ...
+# >        ...
+# >        ...
+# >    ''', 'fg_red'))
+# >

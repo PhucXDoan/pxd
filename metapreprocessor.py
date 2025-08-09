@@ -971,12 +971,12 @@ class __META__:
 
             case (table_type, table_name):
 
-                values = [
+                values_of_entries = [
                     [f'.{name} = {c_repr(value)}' for name, value in entry]
                     for entry in entries
                 ]
 
-                field_names_per_entry = [
+                field_names_of_entries = [
                     (name for name, value in entry)
                     for entry in entries
                 ]
@@ -1004,12 +1004,12 @@ class __META__:
 
                 table_type = f'struct {{ {' '.join(members)} }}'
 
-                values = [
+                values_of_entries = [
                     [c_repr(value) for type, name, value in entry]
                     for entry in entries
                 ]
 
-                field_names_per_entry = [
+                field_names_of_entries = [
                     [name for type, name, value in entry]
                     for entry in entries
                 ]
@@ -1021,24 +1021,27 @@ class __META__:
         if indices is not None and (dupe := find_dupe(indices)) is not ...:
             raise ValueError(f'Duplicate index: {repr(dupe)}.')
 
-        for field_names in field_names_per_entry:
-            if (dupe := find_dupe(field_names)) is not ...:
+        for field_names_of_entry in field_names_of_entries:
+            if (dupe := find_dupe(field_names_of_entry)) is not ...:
                 raise ValueError(f'Duplicate field: {repr(dupe)}.')
 
 
 
         # Output the look-up table.
 
-        lines = [ # TODO Ugly.
-            '{ ' + ', '.join(just_values) + ' },'
-            for just_values in justify(
-                (('<', value) for value in row)
-                for row in values
+        lines = [
+            '{ ' + ', '.join(just_values_of_entry) + ' },'
+            for just_values_of_entry in justify(
+                (('<', value_of_entry) for value_of_entry in values_of_entry)
+                for values_of_entry in values_of_entries
             )
         ]
 
         if indices is not None:
-            lines = [f'[{index}] = {value}' for index, value in zip(justify(('<', index) for index in indices), lines)]
+            lines = [
+                f'[{index}] = {value}'
+                for index, value in zip(justify(('<', index) for index in indices), lines)
+            ]
 
         with self.enter(f'static const {table_type} {table_name}[] ='):
             self.line(lines)

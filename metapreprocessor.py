@@ -1,5 +1,5 @@
 import pathlib, types, contextlib, re, traceback, sys, copy
-from ..pxd.log   import log, ANSI
+from ..pxd.log   import log, ANSI, Indent
 from ..pxd.utils import justify, deindent, c_repr, find_dupe, coalesce, OrderedSet
 
 # TODO Warn on unused symbols.
@@ -9,49 +9,54 @@ from ..pxd.utils import justify, deindent, c_repr, find_dupe, coalesce, OrderedS
 ################################################################################################################################
 #
 # A wrapper around exceptions that are thrown during meta-preprocessing.
-# The main advantage of this is that we can log to the user with
-# detailed information about the stack-trace out of the box.
-# If the user wants to format it their own way, they are free to do so.
+# The wrapper also provides a routine to print out a nice diagnostic.
 #
 
 class MetaError(Exception):
 
 
 
-    def __init__(self, stacks, underlying_exception):
-        self.stacks               = stacks
+    def __init__(self, contexts, underlying_exception):
+        self.contexts             = contexts
         self.underlying_exception = underlying_exception
 
 
 
     def dump(self):
 
-        # Get the surrounding context of each stack.
 
-        for stack in self.stacks:
-            stack.lines = [
-                ((line_i + 1) - stack.line_number, line)
-                for line_i, line in enumerate(stack.file_path.read_text().splitlines())
-                if abs((line_i + 1) - stack.line_number) <= 4
+
+        # Load the file and get the lines around the context.
+
+        for context in self.contexts:
+            context.lines = [
+                ((line_i + 1) - context.line_number, line)
+                for line_i, line in enumerate(context.file_path.read_text().splitlines())
+                if abs((line_i + 1) - context.line_number) <= 4
             ]
 
-        # Log the stack trace.
+
+        # Log each context.
 
         log()
 
-        line_number_just = max([0] + [len(str(stack.line_number + stack.lines[-1][0])) for stack in self.stacks])
+        line_number_just = max([
+            len(str(context.line_number + line_delta))
+            for context in self.contexts
+            for line_delta, line in context.lines
+        ] + [0])
 
-        for stack_i, stack in enumerate(self.stacks):
+        for context_i, context in enumerate(self.contexts):
 
 
 
-            # Spacer.
+            # Space between contexts.
 
-            if stack_i:
-                log(' ' * line_number_just + ' .')
-                log(' ' * line_number_just + ' . ', end = '')
-                log(ANSI('.' * 150, 'fg_bright_black'))
-                log(' ' * line_number_just + ' .')
+            if context_i:
+                with Indent(' ' * line_number_just + ' .'):
+                    log()
+                    log(ANSI('.' * 150, 'fg_bright_black'))
+                    log()
 
 
 
@@ -59,21 +64,37 @@ class MetaError(Exception):
 
             log(' ' * line_number_just + ' |')
 
-            for line_delta, line in stack.lines:
+            for line_delta, line in context.lines:
 
-                with ANSI('bold' if line_delta == 0 else None): # TODO Allow end = ''.
+                with ANSI('bold' if line_delta == 0 else None):
 
-                    line_number = stack.line_number + line_delta
 
-                    log(f'{str(line_number).rjust(line_number_just)} |', end  = '')
-                    log(ANSI(f' {line}', 'bg_red' if line_delta == 0 else None), end = '')
+
+                    # Show the line.
+
+                    line_number = context.line_number + line_delta
+
+                    log(
+                        '{} | {}',
+                        str(line_number).rjust(line_number_just),
+                        ANSI(line, 'bg_red' if line_delta == 0 else None),
+                        end = ''
+                    )
+
+
+
+                    # Show additional information on the line of interest.
 
                     if line_delta == 0:
 
-                        log(ANSI(f' <- {stack.file_path} : {line_number}', 'fg_yellow'), end = '')
+                        with ANSI('fg_yellow'):
 
-                        if stack.function_name is not None:
-                            log(ANSI(f' : {stack.function_name}', 'fg_yellow'), end = '')
+                            log(f' <- {context.file_path} : {line_number}', end = '')
+
+                            if context.function_name is not None:
+                                log(f' : {context.function_name}', end = '')
+
+
 
                     log()
 
@@ -83,20 +104,29 @@ class MetaError(Exception):
 
 
 
-        # Log the reason.
+        # Log the underlying exception.
 
         with ANSI('fg_red'):
 
             match self.underlying_exception:
 
-                # Sometimes the syntax error message will also mention a line number, but it won't be correct.
-                # This is a minor issue, though, so it's probably a not-fix.
-                # e.g: "[ERROR] closing parenthesis ')' does not match opening parenthesis '{' on line 10"
+
+
                 case SyntaxError():
+                    # Sometimes the syntax error message will also mention a line number, but it won't be correct.
+                    # This is a minor issue, though, so it's probably a no-fix.
+                    # e.g:
+                    # >
+                    # >    "[ERROR] closing parenthesis ')' does not match opening parenthesis '{' on line 10"
+                    # >
                     log(f'[ERROR] {self.underlying_exception.args[0]}')
+
+
 
                 case NameError() | AttributeError() | ValueError():
                     log(f'[ERROR] {self.underlying_exception}')
+
+
 
                 case AssertionError():
                     if self.underlying_exception.args:
@@ -104,9 +134,13 @@ class MetaError(Exception):
                     else:
                         log(f'[ERROR] Assertion failed.')
 
+
+
                 case KeyError():
                     log(f'[ERROR] Got {type(self.underlying_exception).__name__}.')
                     log(f'        > {self.underlying_exception}')
+
+
 
                 case _:
                     log(f'[ERROR] Got {type(self.underlying_exception).__name__}.')
@@ -1593,9 +1627,9 @@ def do(*,
 
 
 
-        # Determine the stack trace.
+        # Determine the stack-trace.
 
-        stacks = []
+        contexts = []
 
         match error:
 
@@ -1611,7 +1645,7 @@ def do(*,
 
                 meta_directive, = match
 
-                stacks += [types.SimpleNamespace(
+                contexts += [types.SimpleNamespace(
                     file_path     = meta_directive.source_file_path,
                     line_number   = (meta_directive.meta_header_line_number + 1) + error.lineno - meta_directive.body_line_number,
                     function_name = None,
@@ -1642,16 +1676,16 @@ def do(*,
                 for trace in traces:
 
                    if match := [meta_directive for meta_directive in meta_directives if meta_directive.bytecode_name == trace.filename]:
-                       meta_directive,   = match
-                       stack_file_path   = meta_directive.source_file_path
-                       stack_line_number = (meta_directive.meta_header_line_number + 1) + trace.lineno - meta_directive.body_line_number
+                       meta_directive,     = match
+                       context_file_path   = meta_directive.source_file_path
+                       context_line_number = (meta_directive.meta_header_line_number + 1) + trace.lineno - meta_directive.body_line_number
                    else:
-                       stack_file_path   = pathlib.Path(trace.filename)
-                       stack_line_number = trace.lineno
+                       context_file_path   = pathlib.Path(trace.filename)
+                       context_line_number = trace.lineno
 
-                   stacks += [types.SimpleNamespace(
-                       file_path     = stack_file_path,
-                       line_number   = stack_line_number,
+                   contexts += [types.SimpleNamespace(
+                       file_path     = context_file_path,
+                       line_number   = context_line_number,
                        function_name = '<meta-directive>' if trace.name == '__META_DIRECTIVE__' else trace.name,
                    )]
 
@@ -1659,7 +1693,7 @@ def do(*,
 
         # User deals with the exception now.
 
-        raise MetaError(stacks, error) from error
+        raise MetaError(contexts, error) from error
 
 
 

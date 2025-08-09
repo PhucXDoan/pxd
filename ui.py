@@ -150,10 +150,10 @@ class UI:
                     log(end = '')
                     with ANSI('bold', 'underline'):
                         log(
-                            '> {} {} {}',
+                            '> {} {}{}',
                             ' '.join([*self.invoke_parents, self.name]),
                             ANSI(verb.name, 'bold', 'fg_green'),
-                            ' '.join(parts)
+                            (' ' if parts else '') + ' '.join(parts)
                         )
 
                     description = verb.description

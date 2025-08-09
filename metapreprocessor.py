@@ -228,17 +228,17 @@ class __META__:
                 # The overloaded macro instance only has an argument-list if needed.
                 #
                 # e.g:
-                # >                                                              #define SAY(NAME) MACRO_OVERLOAD__SAY__##NAME
-                # >    Meta.define('SAY', ('NAME'), 'meow', NAME = 'CAT')        #define MACRO_OVERLOAD__SAY__CAT meow
-                # >    Meta.define('SAY', ('NAME'), 'bark', NAME = 'DOG')   ->   #define MACRO_OVERLOAD__SAY__DOG bark
-                # >    Meta.define('SAY', ('NAME'), 'bzzz', NAME = 'BUG')        #define MACRO_OVERLOAD__SAY__BUG bzzz
+                # >                                                              #define SAY(NAME) __MACRO_OVERLOAD__SAY__##NAME
+                # >    Meta.define('SAY', ('NAME'), 'meow', NAME = 'CAT')        #define __MACRO_OVERLOAD__SAY__CAT meow
+                # >    Meta.define('SAY', ('NAME'), 'bark', NAME = 'DOG')   ->   #define __MACRO_OVERLOAD__SAY__DOG bark
+                # >    Meta.define('SAY', ('NAME'), 'bzzz', NAME = 'BUG')        #define __MACRO_OVERLOAD__SAY__BUG bzzz
                 # >
                 #
                 # e.g:
-                # >                                                                            #define SAY(NAME, FUNC) MACRO_OVERLOAD__SAY__##NAME(FUNC)
-                # >    Meta.define('SAY', ('NAME', 'FUNC'), 'FUNC(MEOW)', NAME = 'CAT')        #define MACRO_OVERLOAD__SAY__CAT(FUNC) FUNC(MEOW)
-                # >    Meta.define('SAY', ('NAME', 'FUNC'), 'FUNC(BARK)', NAME = 'DOG')   ->   #define MACRO_OVERLOAD__SAY__DOG(FUNC) FUNC(BARK)
-                # >    Meta.define('SAY', ('NAME', 'FUNC'), '     BZZZ ', NAME = 'BUG')        #define MACRO_OVERLOAD__SAY__BUG(FUNC) BZZZ
+                # >                                                                            #define SAY(NAME, FUNC) __MACRO_OVERLOAD__SAY__##NAME(FUNC)
+                # >    Meta.define('SAY', ('NAME', 'FUNC'), 'FUNC(MEOW)', NAME = 'CAT')        #define __MACRO_OVERLOAD__SAY__CAT(FUNC) FUNC(MEOW)
+                # >    Meta.define('SAY', ('NAME', 'FUNC'), 'FUNC(BARK)', NAME = 'DOG')   ->   #define __MACRO_OVERLOAD__SAY__DOG(FUNC) FUNC(BARK)
+                # >    Meta.define('SAY', ('NAME', 'FUNC'), '     BZZZ ', NAME = 'BUG')        #define __MACRO_OVERLOAD__SAY__BUG(FUNC) BZZZ
                 # >
                 #
 
@@ -251,7 +251,7 @@ class __META__:
 
                 # Output the master macro.
 
-                self.define(f'{macro}({', '.join(parameters)})', f'MACRO_OVERLOAD__{macro}__##{'##'.join(overloading)}{argument_list}')
+                self.define(f'{macro}({', '.join(parameters)})', f'__MACRO_OVERLOAD__{macro}__##{'##'.join(overloading)}{argument_list}')
 
 
 
@@ -636,11 +636,11 @@ class __META__:
     # >
     # >    #define MAX(X, Y) ((X) < (Y) ? (Y) : (X))
     # >
-    # >    #define WORDIFY(NUMBER) MACRO_OVERLOAD__WORDIFY__##NUMBER
-    # >    #define MACRO_OVERLOAD__WORDIFY__0 ZERO
-    # >    #define MACRO_OVERLOAD__WORDIFY__1 ONE
-    # >    #define MACRO_OVERLOAD__WORDIFY__2 TWO
-    # >    #define MACRO_OVERLOAD__WORDIFY__3 THREE
+    # >    #define WORDIFY(NUMBER) __MACRO_OVERLOAD__WORDIFY__##NUMBER
+    # >    #define __MACRO_OVERLOAD__WORDIFY__0 ZERO
+    # >    #define __MACRO_OVERLOAD__WORDIFY__1 ONE
+    # >    #define __MACRO_OVERLOAD__WORDIFY__2 TWO
+    # >    #define __MACRO_OVERLOAD__WORDIFY__3 THREE
     #
 
     @__codegen
@@ -725,7 +725,7 @@ class __META__:
 
             # The name and parameters of this single macro instance itself.
 
-            name       = f'MACRO_OVERLOAD__{name}__{'__'.join(map(str, overloading.values()))}'
+            name       = f'__MACRO_OVERLOAD__{name}__{'__'.join(map(str, overloading.values()))}'
             parameters = list(OrderedSet(parameters) - overloading) or None
 
 

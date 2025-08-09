@@ -385,12 +385,13 @@ class __META__:
         if defining_macro := header_is('#define'):
             self.within_macro = True
 
-        if   defining_macro                                      : suggestion = (None, None      , None)
-        elif header_is('#if', '#ifdef', '#elif', '#else')        : suggestion = (None, '#endif'  , None)
-        elif header_is('struct', 'union', 'enum')                : suggestion = ('{' , '};'      , None)
-        elif header_is('case')                                   : suggestion = ('{' , '} break;', None)
-        elif header is not None and header.strip().endswith('=') : suggestion = ('{' , '};'      , True)
-        else                                                     : suggestion = ('{' , '}'       , None)
+        if   defining_macro                                         : suggestion = (None, None      , None)
+        elif header_is('#if', '#ifdef', '#elif', '#else')           : suggestion = (None, '#endif'  , None)
+        elif header_is('assert', 'static_assert', '_Static_assert') : suggestion = ('(' , ');'      , None)
+        elif header_is('struct', 'union', 'enum')                   : suggestion = ('{' , '};'      , None)
+        elif header_is('case')                                      : suggestion = ('{' , '} break;', None)
+        elif header is not None and header.strip().endswith('=')    : suggestion = ('{' , '};'      , True)
+        else                                                        : suggestion = ('{' , '}'       , None)
 
         if opening  is None: opening  = suggestion[0]
         if closing  is None: closing  = suggestion[1]

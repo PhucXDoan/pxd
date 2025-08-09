@@ -1,4 +1,5 @@
 import contextlib, types
+from ..pxd.utils import deindent
 
 
 
@@ -196,6 +197,26 @@ def log(*arguments, end = ..., clear = False):
 
 
 
+    # We perform deindentation when the value is likely a multi-lined string.
+    # e.g:
+    # >
+    # >    log('''
+    # >        ...
+    # >        ...
+    # >        ...
+    # >    ''')
+    # >
+
+    if value.startswith('\n'):
+
+        value = deindent(value)
+
+        if end is ...:
+            end = ''
+
+
+
+
     # Perform indentation.
     # Some indents are hanging where the characters are only printed out once
     # and the later lines are indented based on how many characters the indent was.
@@ -209,7 +230,7 @@ def log(*arguments, end = ..., clear = False):
     if end is ...:
         end = None
 
-    value = str(value) + ('\n' if end is None else end)
+    value = value + ('\n' if end is None else end)
 
     lines = value.splitlines(keepends = True)
 

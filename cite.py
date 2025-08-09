@@ -670,7 +670,7 @@ def find(parameters):
     # Move onto the process of renaming, if requested.
 
     if parameters.rename is None:
-        return
+        return 0
 
     if any(citation.source_name == parameters.rename for citation in all_citations):
         log(ANSI(f'[WARNING] The new source name "{parameters.rename}" is the name of an already existing source.', 'fg_yellow'))

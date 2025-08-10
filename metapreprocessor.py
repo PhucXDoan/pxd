@@ -548,19 +548,29 @@ class __META__:
 
             # Output the enumeration members with alignment.
 
-            with self.meta.enter(f'enum {self.enum_name}{enum_type_suffix}'):
+            if self.members:
 
-                for value, just_name in justify(
-                    (
-                        (None, value),
-                        ('<' , name ),
-                    )
-                    for name, value in self.members
-                ):
-                    if value is ...:
-                        self.meta.line(f'{name},')
-                    else:
-                        self.meta.line(f'{just_name} = {value},')
+                with self.meta.enter(f'enum {self.enum_name}{enum_type_suffix}'):
+
+                    for value, just_name in justify(
+                        (
+                            (None, value),
+                            ('<' , name ),
+                        )
+                        for name, value in self.members
+                    ):
+                        if value is ...:
+                            self.meta.line(f'{name},')
+                        else:
+                            self.meta.line(f'{just_name} = {value},')
+
+
+
+            # When there's no members, we have to forward-declare it,
+            # because C doesn't allow empty enumerations.
+
+            else:
+                self.meta.line(f'enum {self.enum_name}{enum_type_suffix};')
 
 
 

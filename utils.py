@@ -268,7 +268,7 @@ def deindent(string, *, multilined_string_literal = True, single_line_comment = 
     # Deindent each line.
 
     if global_indent is not None:
-        lines = (line.split(' ', maxsplit = global_indent)[-1] for line in lines)
+         lines = (line.removeprefix(' ' * min(len(line) - len(line.lstrip(' ')), global_indent)) for line in lines)
 
 
 

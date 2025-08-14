@@ -14,9 +14,23 @@ $ git submodule update --init --recursive
 
 At some point, PXD will be its own PyPi package.
 
+> [!CAUTION]
+> This `README.md` will only provide a basic overview of the functionalities of each module,
+> but will not at all be exhaustive.
+> This is far from ideal,
+> but this library is highly experimentative, 
+> so changes are fast-paced.
+> The way this library is used in practice can be found
+> at a [project](https://github.com/RockSat-X/RSXVT2026) I'm working on.
+>
+> At the end of the day,
+> always consult the source code for undescribed features
+> and experiment by actually using the library itself.
+
 - [Meta-Preprecessor](#meta-preprocessor).
 - [Log](#log).
 - [UI](#ui).
+- [Cite](#cite).
 
 # Meta-Preprocessor.
 
@@ -311,10 +325,6 @@ Exception that are raised are wrapped by `MetaError` which provides a method to 
 If you don't like the look of the output,
 you can always inspect the exception object and output your own diagnostic.
 
-This section on the meta-preprocessor is not exhaustive.
-The meta-preprocessor is very technical and highly experimental,
-so please take time to read the source code if you'd like to learn more.
-
 # Log.
 
 The log module extends Python's `print` with some convenience features.
@@ -416,10 +426,6 @@ with ANSI('fg_red'), Indent('[ERROR] ', hanging = True):
 # |        This is where I explain it.
 # |        This explaination spans multiple lines.
 ```
-
-And that's the gist of it.
-There are other features in the log module that I won't explain further here.
-Please read the source code for more information.
 
 # UI.
 
@@ -556,6 +562,50 @@ In fact,
 each UI instance comes with its own `help` verb to print
 out the list of verbs alongside their parameters.
 
-There is much more to say about UI,
-but once again,
-please have a look at the source code to learn more.
+# Cite.
+
+The cite module defines a UI instance (although in the future this might be changed
+so that it can be run like a regular script).
+This UI instance defines some verbs to allow for searching through a codebase for citations
+and sources.
+
+The general syntax for a citaiton is as so:
+```
+@/fieldname fieldvalue/fieldname fieldvalue/`sourcename`
+```
+
+An example of a citation to the source `DatasheetXYZ` on page 123, section 4.5:
+```
+@/pg 123/sec 4.5/`DatasheetXYZ`
+```
+
+All sources between the backticks must be defined using the following syntax:
+```
+@/`sourcename`:
+```
+
+Typically some text is placed after the colon to describe the source
+(e.g. the full name, the revision number, etc.)
+
+Some citations have sources that are "inlined",
+that is, they don't need a source definition.
+As of writing,
+there's two kinds of inlined citations.
+```
+@/url:`www.google.com`.
+@/by:`Phuc Doan`.
+```
+
+The reason why this module exists is because it makes managing citations within a codebase much easier.
+Good code will have citations to the appropriate datasheet, reference manual, etc. wherever applicable.
+```
+configurations.flash_latency            = '0x7'  # @/pg 211/tbl 29/`H7S3rm`.
+configurations.flash_programming_delay  = '0b11' # "
+configurations.internal_voltage_scaling = {      # @/pg 327/sec 6.8.6/`H7S3rm`.
+    'low'  : 0,
+    'high' : 1,
+}['high']
+```
+
+The `cite` UI can search for every instance of citation and do some basic checks on them,
+mainly to catch any typos.

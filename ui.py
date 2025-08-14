@@ -587,11 +587,11 @@ class UI:
 
                     if parameter_schema.flag:
 
-                        self._error(
+                        self.__error(
                             f'Argument "{argument}" is assumed to be for parameter {parameter_schema.representation}, '
                             f'but this parameter must be a flag.\n'
                             f'Try (--{parameter_schema.identifier.replace('_', '-')}="{argument}") instead.',
-                            verb = verb_name
+                            help_verb = verb_name
                         )
 
                     parameters[parameter_schema.identifier] = argument

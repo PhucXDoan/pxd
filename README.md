@@ -16,6 +16,7 @@ At some point, PXD will be its own PyPi package.
 
 - [Meta-Preprecessor](#meta-preprocessor).
 - [Log](#log).
+- [UI](#ui).
 
 # Meta-Preprocessor.
 
@@ -419,3 +420,142 @@ with ANSI('fg_red'), Indent('[ERROR] ', hanging = True):
 And that's the gist of it.
 There are other features in the log module that I won't explain further here.
 Please read the source code for more information.
+
+# UI.
+
+The UI module allows for the easy creation of command-line interfaces using Python.
+
+To make one,
+create a UI instance by providing a name and description.
+
+```python
+import pxd.ui
+MyCLI = pxd.ui.UI('MyCLI', 'My command line interface.')
+```
+
+This UI instance can be used as a decorator on functions;
+these functions you decorate (which I call *verbs*) will be a part of the CLI.
+
+```python
+@MyCLI(
+    {
+        'description' : 'Say hello to the user.',
+    },
+)
+def greet(parameters):
+    print('Hello!')
+
+@MyCLI(
+    {
+        'description' : 'Say bye to the user.',
+    },
+)
+def bye(parameters):
+    print('Bye bye!')
+```
+
+Invoking the CLI is typically done like so:
+
+```python
+import sys
+MyCLI.invoke(sys.argv[1:])
+```
+
+Thus,
+when the user runs the Python script,
+the UI module will automatically parse the provided command line arguments
+to determine which verb to run.
+
+```
+$ ./script.py greet
+Hello!
+
+$ ./script.py bye
+Bye bye!
+```
+
+The UI module has many options to allow for arguments to be passed to the verbs.
+
+```python
+@MyCLI(
+    {
+        'description' : 'Subtracts two numbers.',
+    },
+    {
+        'name'        : 'first',
+        'type'        : int,
+        'description' : 'The first number on the left-hand side.'
+    },
+    {
+        'name'        : 'second',
+        'type'        : int,
+        'description' : 'The second number on the right-hand side.'
+    },
+)
+def subtract(parameters):
+    print(f'The difference is {parameters.first - parameters.second}.')
+
+MyCLI.invoke(['subtract', '3', '5'])
+# |The difference is -2.
+```
+
+```python
+@MyCLI(
+    {
+        'description' : 'Say hello to the user.',
+    },
+    {
+        'name'        : 'username',
+        'type'        : str,
+        'description' : 'Name of the user.'
+        'default'     : 'Ralph',
+    },
+    {
+        'name'        : 'uppercase',
+        'type'        : bool,
+        'description' : 'Output in upper case.'
+        'default'     : False,
+    }
+)
+def greet(parameters):
+
+    output = f'Hello, {parameters.username}!'
+
+    if paramters.uppercase:
+        output = output.upper()
+
+    print(output)
+
+MyCLI.invoke(['greet'])
+# |Hello, Ralph!
+
+MyCLI.invoke(['greet', 'Phuc'])
+# |Hello, Phuc!
+
+MyCLI.invoke(['greet', '--uppercase'])
+# |HELLO, RALPH!
+```
+
+Multiple UI instances can actually be nested.
+
+```python
+MyCLI    = pxd.ui.UI('MyCLI', 'My command line interface.')
+MySubCLI = pxd.ui.UI('MySubCLI', 'My smaller command line interface.')
+
+...
+
+MyCLI(MySubCLI)
+
+...
+
+MyCLI.invoke(['MySubCLI', ...])
+```
+
+The most important aspect of the UI module is its handling of errors.
+In fact,
+each UI instance comes with its own `help` verb to print
+out the list of verbs alongside their parameters.
+
+There is much more to say about UI,
+but once again,
+please have a look at the source code to learn more.

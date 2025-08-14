@@ -14,7 +14,10 @@ $ git submodule update --init --recursive
 
 At some point, PXD will be its own PyPi package.
 
-## Meta-Preprocessor.
+- [Meta-Preprecessor](#meta-preprocessor).
+- [Log](#log).
+
+# Meta-Preprocessor.
 
 The meta-preprocessor is used to generate code in a similar way [`cog`](https://cog.readthedocs.io/en/latest/#) does,
 but is specifically designed for the C preprocessor (and thus for C/C++ output).[^cog]
@@ -310,3 +313,109 @@ you can always inspect the exception object and output your own diagnostic.
 This section on the meta-preprocessor is not exhaustive.
 The meta-preprocessor is very technical and highly experimental,
 so please take time to read the source code if you'd like to learn more.
+
+# Log.
+
+The log module extends Python's `print` with some convenience features.
+
+It can be used like a regular `print`.
+
+```python
+log('Hello, World!')
+# |Hello, World!
+```
+
+But it is not a drop-in replacement,
+because it does certain things like deindentation.
+```python
+log(f'''
+    Hello,
+        World!
+        This is a multilined string
+            which has space indentation.
+            but `log` is accounting for it.
+''')
+# |Hello,
+# |    World!
+# |    This is a multilined string
+# |        which has space indentation.
+# |        but `log` is accounting for it.
+```
+
+Another difference is that `log` only uses the first argument for the value to be printed out.
+If given multiple arguments,
+they are assumed to be for `.format(...)`.
+```python
+log('My name is {}. I am {} years old.', 'Ralph', 4)
+# |My name is Ralph. I am 4 years old.
+```
+
+The module also defines `ANSI` to allow for ANSI escape sequences
+for coloring the output text and such.
+```python
+log(ANSI('This text would be red.', 'fg_red'))
+log(ANSI('This text would have a red background.', 'bg_red'))
+log(ANSI('This text would be bold and green.', 'fg_green', 'bold'))
+log(
+    f'''
+        I am {}
+        and she is {}!
+    ''',
+    ANSI('red and underlined', 'fg_red', 'underline'),
+    ANSI('blue and bold', 'fg_blue', 'bold'),
+)
+```
+
+The `ANSI` helper can also be used as a context-manager to allow for nested properties.
+```python
+with ANSI('fg_red'):
+
+    log('This text is red.')
+
+    with ANSI('bold'):
+        log('This text is red and bold.')
+        log(ANSI('This text is green and bold.', 'fg_green'))
+
+    log('This text is now just red.')
+```
+
+Another context-manager is `Indent` which by default adds an indentation of four spaces.
+```python
+log('Hello')
+
+with Indent():
+
+    log('World')
+
+    with Indent():
+        log('Bye')
+
+    log('World')
+
+log('!')
+
+# |Hello
+# |    World
+# |        Bye
+# |    World
+# |!
+```
+
+The indentation can be set to anything;
+there's an option to allow for a hanging indent where the characters for the indentation
+is only printed once and the rest of the lines will be indented with whitespace of the same length.
+
+```python
+with ANSI('fg_red'), Indent('[ERROR] ', hanging = True):
+    log('Something bad happened!')
+    log('This is where I explain it.')
+    log('This explaination spans multiple lines.')
+
+# |[ERROR] Something bad happened!
+# |        This is where I explain it.
+# |        This explaination spans multiple lines.
+```
+
+And that's the gist of it.
+There are other features in the log module that I won't explain further here.
+Please read the source code for more information.

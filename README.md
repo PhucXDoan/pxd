@@ -323,18 +323,16 @@ Meta.define('LIGHTSPEED', C)
 Naturally,
 one is concerned with the quality of error messages,
 especially when there are multiple meta-directives,
-each depending on each other for different variables and what not,
+each depending on each other for different variables,
 all spread across the code base, all evaluated in an out-of-order fashion.
-
 Luckily,
-the meta-preprocessor provides a built-in way to log exceptions that arise
-during the evaluation of meta-directives.
-Exception that are raised are wrapped by `MetaError` which provides a method to do this.
+the meta-preprocessor wraps all exceptions with `MetaError` which provides
+a built-in method to log the error.
 
 <p align="center"><kbd><img src="https://github.com/user-attachments/assets/70acd11f-72f7-475d-a10d-0ebefb53093d" width="600px"></kbd></p>
 
 If you don't like the look of the output,
-you can always inspect the exception object and output your own diagnostic.
+you can always inspect the exception and make your own diagnostic.
 
 
 
@@ -435,11 +433,11 @@ is only printed once and the rest of the lines will be indented with whitespace 
 with ANSI('fg_red'), Indent('[ERROR] ', hanging = True):
     log('Something bad happened!')
     log('This is where I explain it.')
-    log('This explaination spans multiple lines.')
+    log('This explanation spans multiple lines.')
 
 # |[ERROR] Something bad happened!
 # |        This is where I explain it.
-# |        This explaination spans multiple lines.
+# |        This explanation spans multiple lines.
 ```
 
 
@@ -459,7 +457,7 @@ MyCLI = pxd.ui.UI('MyCLI', 'My command line interface.')
 ```
 
 This UI instance can be used as a decorator on functions;
-these functions you decorate (which I call *verbs*) will be a part of the CLI.
+these functions you decorate (which will go by the term *verbs*) will be a part of the CLI.
 
 ```python
 @MyCLI(
@@ -499,7 +497,8 @@ $ ./script.py bye
 Bye bye!
 ```
 
-The UI module has many options to allow for arguments to be passed to the verbs.
+The UI module has many options for adding arguments to verbs,
+and the way the arguments are parsed is quite flexible.
 
 ```python
 @MyCLI(
@@ -508,13 +507,13 @@ The UI module has many options to allow for arguments to be passed to the verbs.
     },
     {
         'name'        : 'first',
-        'type'        : int,
         'description' : 'The first number on the left-hand side.'
+        'type'        : int,
     },
     {
         'name'        : 'second',
-        'type'        : int,
         'description' : 'The second number on the right-hand side.'
+        'type'        : int,
     },
 )
 def subtract(parameters):
@@ -531,14 +530,14 @@ MyCLI.invoke(['subtract', '3', '5'])
     },
     {
         'name'        : 'username',
-        'type'        : str,
         'description' : 'Name of the user.'
+        'type'        : str,
         'default'     : 'Ralph',
     },
     {
         'name'        : 'uppercase',
-        'type'        : bool,
         'description' : 'Output in upper case.'
+        'type'        : bool,
         'default'     : False,
     }
 )
@@ -559,6 +558,12 @@ MyCLI.invoke(['greet', 'Phuc'])
 
 MyCLI.invoke(['greet', '--uppercase'])
 # |HELLO, RALPH!
+
+MyCLI.invoke(['greet', '--uppercase', 'Kenny'])
+# |HELLO, KENNY!
+
+MyCLI.invoke(['greet', '--uppercase=false', 'Kenny'])
+# |Hello, Kenny!
 ```
 
 Multiple UI instances can actually be nested.
@@ -576,12 +581,14 @@ MyCLI(MySubCLI)
 MyCLI.invoke(['MySubCLI', ...])
 ```
 
-The most important aspect of the UI module is its handling of errors.
-In fact,
-each UI instance comes with its own `help` verb to print
-out the list of verbs alongside their parameters.
+Each UI instance automatically comes with its own `help` verb to print out the UI's usage.
 
 <p align="center"><kbd><img src="https://github.com/user-attachments/assets/efba2a48-1ead-4d36-87ec-c3a8632e248e" width="600px"></kbd></p>
+
+The UI module also provides a lot of helpful diagnostics for any user errors.
+
+<p align="center"><kbd><img src="https://github.com/user-attachments/assets/39d100da-d10e-4509-8376-28a3d8fea3a4" width="600px"></kbd></p>
+
 
 
 

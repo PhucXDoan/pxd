@@ -583,7 +583,7 @@ MyCLI.invoke(['MySubCLI', ...])
 
 Each UI instance automatically comes with its own `help` verb to print out the UI's usage.
 
-<p align="center"><kbd><img src="https://github.com/user-attachments/assets/422be99f-03e2-48b5-920b-a4098d49adab" width="600px"></kbd></p>
+<p align="center"><kbd><img src="https://github.com/user-attachments/assets/1fe4027b-3262-44dd-851b-9bf98ff17d95" width="600px"></kbd></p>
 
 The UI module also provides a lot of helpful diagnostics for any user errors.
 

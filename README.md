@@ -35,6 +35,10 @@ At some point, PXD will be its own proper PyPi package that can be installed wit
 - [Utilities](#utilities).
 - [S-Expression Parser](#s-expression-parser).
 
+
+
+
+
 # Meta-Preprocessor.
 
 The meta-preprocessor is used to generate code in a similar way [`cog`](https://cog.readthedocs.io/en/latest/#) does,
@@ -328,6 +332,10 @@ Exception that are raised are wrapped by `MetaError` which provides a method to 
 If you don't like the look of the output,
 you can always inspect the exception object and output your own diagnostic.
 
+
+
+
+
 # Log.
 
 The log module extends Python's `print` with some convenience features.
@@ -429,6 +437,10 @@ with ANSI('fg_red'), Indent('[ERROR] ', hanging = True):
 # |        This is where I explain it.
 # |        This explaination spans multiple lines.
 ```
+
+
+
+
 
 # UI.
 
@@ -565,6 +577,10 @@ In fact,
 each UI instance comes with its own `help` verb to print
 out the list of verbs alongside their parameters.
 
+
+
+
+
 # Cite.
 
 The cite module defines a UI instance (although in the future this might be changed
@@ -613,20 +629,33 @@ configurations.internal_voltage_scaling = {      # @/pg 327/sec 6.8.6/`H7S3rm`.
 The `cite` UI can search for every instance of citation and do some basic checks on them,
 mainly to catch any typos.
 
+
+
+
+
 # Utilities.
 
 The infamous utilities module.
+
 This just has helper functions that do very specific things
-and are useful to have in a very general context.
-Some more helper functions might be added,
+but are still useful to have in a very general context.
+
+More helper functions might be added,
 but the size of this module will always be made small,
-because having a large number of helper functions makes it hard to remember them all,
+so some functions might be completely axed.
+
+The rationale here is that having a large number of helper functions makes it hard to remember them all,
 thus they'd be used less often,
 defeating the whole point of the utilities module.
+
+
+
+
 
 # S-Expression Parser.
 
 This module defines a parser for S-expressions.
 That's pretty much it.
-Other existing implementations are out there,
-but I just wanted something custom-made that I can soon improve upon to have better error messages and performance.
+There are other existing [implementations](https://sexpdata.readthedocs.io/en/latest/#),
+but I just wanted something custom-made
+that I can soon improve upon to have better error messages and performance.

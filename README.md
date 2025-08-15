@@ -598,7 +598,7 @@ The UI module also provides a lot of helpful diagnostics for any user errors.
 The cite module defines a UI instance (although in the future this might be changed
 so that it can be run like a regular script).
 This UI instance defines some verbs to allow for searching through a codebase for citations
-and sources.
+and source materials.
 
 The general syntax for a citaiton is as so:
 ```
@@ -610,7 +610,7 @@ An example of a citation to the source `DatasheetXYZ` on page 123, section 4.5:
 @/pg 123/sec 4.5/`DatasheetXYZ`
 ```
 
-All sources between the backticks must be defined using the following syntax:
+Any source that is referenced by citations must be defined somewhere using the following syntax:
 ```
 @/`sourcename`:
 ```
@@ -623,11 +623,11 @@ that is, they don't need a source definition.
 As of writing,
 there's two kinds of inlined citations.
 ```
-@/url:`www.google.com`.
-@/by:`Phuc Doan`.
+@/url:`<link>`
+@/by:`<name>`
 ```
 
-The reason why this module exists is because it makes managing citations within a codebase much easier.
+This module makes managing citations within a codebase much easier (at least for me).
 Good code will have citations to the appropriate datasheet, reference manual, etc. wherever applicable.
 ```
 configurations.flash_latency            = '0x7'  # @/pg 211/tbl 29/`H7S3rm`.
@@ -638,8 +638,7 @@ configurations.internal_voltage_scaling = {      # @/pg 327/sec 6.8.6/`H7S3rm`.
 }['high']
 ```
 
-The `cite` UI can search for every instance of citation and do some basic checks on them,
-mainly to catch any typos.
+The `cite` UI can search for every citation, do some basic syntax checks on them, and rename sources.
 
 
 

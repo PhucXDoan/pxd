@@ -41,17 +41,18 @@ At some point, PXD will be its own proper PyPi package that can be installed wit
 
 # Meta-Preprocessor.
 
-The meta-preprocessor is used to generate code in a similar way [`cog`](https://cog.readthedocs.io/en/latest/#) does,
+The meta-preprocessor is used to generate code in a similar way [cog](https://cog.readthedocs.io/en/latest/#) does,
 but is specifically designed for the C preprocessor (and thus for C/C++ output).[^cog]
 
-[^cog]: I've never used `cog`, so I can't say all the exact differences between my meta-preprocessor and Ned Batchelder's `cog`.
+[^cog]: I've never used cog before,
+so I can't say anything more about the exact differences
+between my meta-preprocessor and Ned Batchelder's cog.
 
-This is mostly done through Python code written in multi-lined comments (tagged with `#meta`) embedded within the source code.
+The meta-preprocessor operates on having Python code
+embedded in multi-lined comments tagged with `#meta` within C/C++ source code.
 For example:
 
 ```c
-// [main.c] Pre-preprocessing.
-
 int main()
 {
     #include "output.txt"
@@ -64,15 +65,13 @@ int main()
 }
 ```
 
-The meta-preprocessor will find the comment (which we call a *meta-directive*),
+The meta-preprocessor will find the comment (to which it now goes by the name *meta-directive*),
 run the Python code,
 and output the generated code into the file `output.txt`.
 Then during compilation,
 the C preprocessor will expand the `#include` to arrive at the final output (more or less):
 
 ```c
-// [main.c] Post-preprocessing.
-
 int main()
 {
     printf("0");
@@ -101,7 +100,6 @@ except pxd.metapreprocessor.MetaError as error:
 ```
 
 The meta-preprocessor provides a lot of powerful methods in `Meta` to generate C code that looks nice.
-See the source code for more information about how to use the methods.
 
 ```c
 #include "example.meta"
@@ -129,10 +127,9 @@ constexpr int Name_COUNT = 5;
 
 One of the superpowers of the meta-preprocessor is its concept of *dependencies*.
 Taking the same example above,
-we can have one meta-directive export the value of `NAMES` and `C` and another that's importing them.
-Variables that are exported out of the meta-directive are listed to the left of the `:`,
-while variables that are imported into the meta-directive are listed to the right of the `:`.
-Thus, the following snippet would produce the sample output for `example.meta`.
+we can have one meta-directive export the value of `NAMES` and `C`
+and another meta-directive to import them.
+The following snippet would produce the sample output for `example.meta`.
 
 ```c
 /* #meta NAMES, C :
@@ -147,11 +144,14 @@ Thus, the following snippet would produce the sample output for `example.meta`.
 */
 ```
 
+Variables that are exported out of the meta-directive are listed to the left of the `:`,
+while variables that are imported into the meta-directive are listed to the right of the `:`.
+
 This means you can define global data structures and helper functions that other meta-directives can import and use
 without having to define anything multiple times.
-This can even mean the value of `NAMES` or `C` is defined by a meta-directive in a completely separate file.
+Thus, the definition of `NAMES` and `C` can be in a completely separate file.
 
-The above example can also be written as so:
+The above example can also be rewritten as so:
 
 ```c
 #include "example.meta"
@@ -160,7 +160,7 @@ The above example can also be written as so:
     Meta.define('LIGHTSPEED', C)
 */
 
-/* #meta NAMES, C :
+/* #meta NAMES, C
     NAMES = ['Ralph', 'Phuc', 'Kenny', 'Penny', 'Katelyn']
     C     = 299_792_458
 */
@@ -173,11 +173,12 @@ Thus, just because one meta-directive is higher up in the source file, it doesn'
 The order that the meta-directives are evaluated in is entirely dependent upon their import and export dependencies.
 
 2. If a meta-directive exports and imports nothing (that is, a bare `#meta` tag),
-then it will always be evaluated last alongside with the other meta-directives that also don't export/import anything.
-The rationale being here is that these export/import-less meta-directives do not affect the dependencies of other meta-directives,
+then it'll actually implicitly import everything.
+The rationale here is that these "export/import-less" meta-directives
+don't actually affect the dependencies of other meta-directives,
 so they can be executed last,
 and in doing so,
-we might as well have those meta-directives have access to every exported value.
+we might as well have those meta-directives be able to access to every exported value.
 
 The different forms of exports/imports is detailed below:
 
@@ -265,7 +266,7 @@ In a drawing:
 (#meta : D, E, F)   (#meta)
 ```
 
-This syntax of exports/imports perhaps a little confusing at first look, but is quite comfortable to work with.
+This syntax of exports/imports is perhaps a little confusing at first look, but is quite comfortable to work with.
 Nonetheless,
 for pedalogical reasons,
 I'll be reworking it for it to be more clear in the future.
@@ -305,7 +306,8 @@ NAMES = ['Ralph', 'Phuc', 'Kenny', 'Penny', 'Katelyn']
 C     = 299_792_458
 ```
 
-Meta-directives that also generate code uses the same syntax with `#include`:
+If this meta-directive also generates code,
+it'll use the same syntax with `#include`:
 
 ```python
 #include "stuff.h"

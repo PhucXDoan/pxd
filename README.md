@@ -1,36 +1,39 @@
 # The PXD Library.
 
 This repository is a set of Python scripts that I've developed over time while working on projects,
-but felt like they could be also used in a many other projects too.
-The initials PXD refers to my name, Phuc Xuan Doan.
+but felt like they could be used in many other projects too.
+Thus, the PXD library, where PXD is the initials of my name, Phuc Xuan Doan.
 
 As of right now,
-the main way to use this library is through git submodules (or manual downloading of files).
+the main way to use this library is through git submodules (or the manual downloading of the files).
 
 ```
-$ git submodule add https://github.com/PhucXDoan/pxd ./pxd
-$ git submodule update --init --recursive
+git submodule add https://github.com/PhucXDoan/pxd ./pxd
+```
+```
+git submodule update --init --recursive
 ```
 
-At some point, PXD will be its own PyPi package.
+At some point, PXD will be its own proper PyPi package that can be installed with `pip`.
 
 > [!CAUTION]
 > This `README.md` will only provide a basic overview of the functionalities of each module,
-> but will not at all be exhaustive.
+> but will not be exhaustive.
 > This is far from ideal,
-> but this library is highly experimentative, 
-> so changes are fast-paced.
-> The way this library is used in practice can be found
-> at a [project](https://github.com/RockSat-X/RSXVT2026) I'm working on.
+> but this library is highly experimental, 
+> so breaking changes are expected.
 >
 > At the end of the day,
-> always consult the source code for undescribed features
-> and experiment by actually using the library itself.
+> always consult the source code for undescribed features.
+> To see this library in practice,
+> check out a [project](https://github.com/RockSat-X/RSXVT2026) I'm working on.
 
 - [Meta-Preprecessor](#meta-preprocessor).
 - [Log](#log).
 - [UI](#ui).
 - [Cite](#cite).
+- [Utilities](#utilities).
+- [S-Expression Parser](#s-expression-parser).
 
 # Meta-Preprocessor.
 
@@ -609,3 +612,21 @@ configurations.internal_voltage_scaling = {      # @/pg 327/sec 6.8.6/`H7S3rm`.
 
 The `cite` UI can search for every instance of citation and do some basic checks on them,
 mainly to catch any typos.
+
+# Utilities.
+
+The infamous utilities module.
+This just has helper functions that do very specific things
+and are useful to have in a very general context.
+Some more helper functions might be added,
+but the size of this module will always be made small,
+because having a large number of helper functions makes it hard to remember them all,
+thus they'd be used less often,
+defeating the whole point of the utilities module.
+
+# S-Expression Parser.
+
+This module defines a parser for S-expressions.
+That's pretty much it.
+Other existing implementations are out there,
+but I just wanted something custom-made that I can soon improve upon to have better error messages and performance.

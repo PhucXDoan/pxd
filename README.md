@@ -331,6 +331,8 @@ the meta-preprocessor provides a built-in way to log exceptions that arise
 during the evaluation of meta-directives.
 Exception that are raised are wrapped by `MetaError` which provides a method to do this.
 
+<p align="center"><kbd><img src="https://github.com/user-attachments/assets/70acd11f-72f7-475d-a10d-0ebefb53093d" width="600px"></kbd></p>
+
 If you don't like the look of the output,
 you can always inspect the exception object and output your own diagnostic.
 
@@ -579,6 +581,7 @@ In fact,
 each UI instance comes with its own `help` verb to print
 out the list of verbs alongside their parameters.
 
+<p align="center"><kbd><img src="https://github.com/user-attachments/assets/efba2a48-1ead-4d36-87ec-c3a8632e248e" width="600px"></kbd></p>
 
 
 

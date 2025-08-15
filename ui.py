@@ -735,7 +735,7 @@ class UI:
 
             # Finally, execute the verb!
 
-            parameters = types.SimpleNamespace(parameters)
+            parameters = types.SimpleNamespace(**parameters)
 
             self.__execute(
                 lambda: verb.function(parameters, *bypass_args, **bypass_kwargs),

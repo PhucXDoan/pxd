@@ -552,8 +552,9 @@ class __META__:
 
                 with self.meta.enter(f'enum {self.enum_name}{enum_type_suffix}'):
 
-                    for value, just_name in justify(
+                    for name, value, just_name in justify(
                         (
+                            (None, name ),
                             (None, value),
                             ('<' , name ),
                         )

@@ -587,7 +587,7 @@ Each UI instance automatically comes with its own `help` verb to print out the U
 
 The UI module also provides a lot of helpful diagnostics for any user errors.
 
-<p align="center"><kbd><img src="https://github.com/user-attachments/assets/485519ca-e45a-43ac-9ea8-0b7cd20b43b9" width="600px"></kbd></p>
+<p align="center"><kbd><img src="https://github.com/user-attachments/assets/7f9586e2-13c9-4134-9050-05082312b383" width="600px"></kbd></p>
 
 
 

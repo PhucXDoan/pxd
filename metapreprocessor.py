@@ -1394,7 +1394,18 @@ def do(*,
                         # Get next line of the body.
 
                         if not remaining_lines:
-                            assert False
+                            raise MetaError(
+                                [
+                                    types.SimpleNamespace(
+                                        file_path     = source_file_path,
+                                        line_number   = meta_header_line_number,
+                                        function_name = None,
+                                    )
+                                ],
+                                SyntaxError(
+                                    f"Couldn't find the terminating '*/'."
+                                )
+                            )
 
                         body_line              = remaining_lines[0]
                         remaining_lines        = remaining_lines[1:]

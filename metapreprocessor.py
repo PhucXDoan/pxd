@@ -727,14 +727,14 @@ class __META__:
 
             # e.g: Meta.define('PI', 3.1415)
 
-            case [name, expansion]:
+            case (name, expansion):
                 parameters = None
 
 
 
             # e.g: Meta.define('MAX', ('X', 'Y'), '((X) < (Y) ? (Y) : (X))')
 
-            case [name, (*parameters,), expansion]:
+            case (name, (*parameters,), expansion):
                 pass
 
 
@@ -742,7 +742,7 @@ class __META__:
             # e.g: Meta.define('TWICE', ('X'), '((X) * 2)')
             # e.g: Meta.define('PI'   , None , 3.1415     )
 
-            case [name, parameter, expansion]:
+            case (name, parameter, expansion):
                 if parameter is None:
                     parameters = None
                 else:
@@ -752,8 +752,11 @@ class __META__:
 
             # Unknown syntax.
 
-            case _:
-                assert False
+            case unknown:
+                raise ValueError(
+                    f'Not sure what to do with the '
+                    f'set of arguments: {repr(args)}.'
+                )
 
 
 

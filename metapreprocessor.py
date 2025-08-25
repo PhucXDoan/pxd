@@ -1,4 +1,4 @@
-import pathlib, types, contextlib, re, traceback, sys, copy
+import pathlib, types, contextlib, re, traceback, sys, copy, string
 from ..pxd.log   import log, ANSI, Indent
 from ..pxd.utils import justify, deindent, c_repr, find_dupe, coalesce, OrderedSet
 
@@ -1331,8 +1331,20 @@ def do(*,
                     if symbol == '':
                         continue # We're fine with extra commas.
 
-                    if not re.fullmatch('[a-zA-Z_][a-zA-Z0-9_]*', symbol):
-                        assert False, repr(symbol)
+                    if not symbol.isidentifier():
+                        raise MetaError(
+                            [
+                                types.SimpleNamespace(
+                                    file_path     = source_file_path,
+                                    line_number   = meta_header_line_number,
+                                    function_name = None,
+                                ),
+                            ],
+                            SyntaxError(
+                                f'The symbol {repr(symbol)} doesn\'t '
+                                f'look like an identifier.'
+                            )
+                        )
 
                     symbols += [symbol]
 

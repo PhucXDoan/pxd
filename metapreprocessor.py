@@ -6,8 +6,10 @@ from ..pxd.utils import justify, deindent, c_repr, find_dupe, coalesce, OrderedS
 
 ################################################################################################################################
 #
-# A wrapper around exceptions that are thrown during meta-preprocessing.
-# The wrapper also provides a routine to print out a nice diagnostic.
+# A wrapper around exceptions that
+# are thrown during meta-preprocessing.
+# The wrapper also provides a routine
+# to print out a nice diagnostic.
 #
 
 class MetaError(Exception):
@@ -29,7 +31,9 @@ class MetaError(Exception):
         for context in self.contexts:
             context.lines = [
                 ((line_i + 1) - context.line_number, line)
-                for line_i, line in enumerate(context.file_path.read_text().splitlines())
+                for line_i, line in enumerate(
+                    context.file_path.read_text().splitlines()
+                )
                 if abs((line_i + 1) - context.line_number) <= 4
             ]
 
@@ -111,12 +115,16 @@ class MetaError(Exception):
 
 
                 case SyntaxError():
-                    # Sometimes the syntax error message will also mention a line number, but it won't be correct.
-                    # This is a minor issue, though, so it's probably a no-fix.
+
+                    # Sometimes the syntax error message
+                    # will also mention a line number, but
+                    # it won't be correct. This is a minor
+                    # issue, though, so it's probably a no-fix.
                     # e.g:
                     # >
                     # >    "[ERROR] closing parenthesis ')' does not match opening parenthesis '{' on line 10"
                     # >
+
                     log(f'[ERROR] {self.underlying_exception.args[0]}')
 
 
@@ -149,7 +157,8 @@ class MetaError(Exception):
 
 ################################################################################################################################
 #
-# The main toolbox used in meta-directives to generate nice looking C code in a low-friction way.
+# The main toolbox used in meta-directives to
+# generate nice looking C code in a low-friction way.
 #
 
 class __META__:
@@ -167,8 +176,10 @@ class __META__:
 
     ################################################################################################################################
     #
-    # Protect against accidentally using stuff related to code generation
-    # when the meta-directive has no file to output it to.
+    # Protect against accidentally using
+    # stuff related to code generation
+    # when the meta-directive has no file
+    # to output it to.
     #
 
     def __codegen(function):
@@ -176,7 +187,10 @@ class __META__:
         def wrapper(self, *args, **kwargs):
 
             if self.meta_directive.include_directive_file_path is None:
-                raise RuntimeError('Using `Meta` to generate code is only allowed when the meta-directives has an include-directive.')
+                raise RuntimeError(
+                    f'Using `Meta` to generate code is only allowed '
+                    f'when the meta-directives has an include-directive.'
+                )
 
             return function(self, *args, **kwargs)
 
@@ -209,15 +223,20 @@ class __META__:
 
         # Indicate origin of the meta-directive in the generated output.
 
-        self.line(f'// [{self.meta_directive.source_file_path}:{self.meta_directive.include_directive_line_number}].')
+        self.line(f'''
+            // [{self.meta_directive.source_file_path}:{self.meta_directive.include_directive_line_number}].
+        ''')
 
 
 
         # Create the master macro for any overloaded macros.
-        # This has to be done first because the overloaded macros could be used later in the generated file after they're defined,
-        # and if we don't have the master macro to have the overloaded macros be invoked, errors will happen!
-        # We could also make the master macro when we're making the first overloaded macro instance,
-        # but this master macro could be inside of a #if, making it potentially unexpectedly undefined in certain situations.
+        # This has to be done first because the overloaded macros
+        # could be used later in the generated file after they're defined,
+        # and if we don't have the master macro to have the overloaded
+        # macros be invoked, errors will happen! We could also make the
+        # master macro when we're making the first overloaded macro instance,
+        # but this master macro could be inside of a #if, making it
+        # potentially unexpectedly undefined in certain situations.
 
         if self.overloads:
 
@@ -251,7 +270,10 @@ class __META__:
 
                 # Output the master macro.
 
-                self.define(f'{macro}({', '.join(parameters)})', f'__MACRO_OVERLOAD__{macro}__##{'##'.join(overloading)}{argument_list}')
+                self.define(
+                    f'{macro}({', '.join(parameters)})',
+                    f'__MACRO_OVERLOAD__{macro}__##{'##'.join(overloading)}{argument_list}'
+                )
 
 
 
@@ -476,9 +498,17 @@ class __META__:
 
 
 
-        # Whether or not we determine if `Meta.enums` is being used as a context-manager is if the list of members is provided.
+        # Whether or not we determine if `Meta.enums` is being used
+        # as a context-manager is if the list of members is provided.
 
-        def __init__(self, meta, enum_name, enum_type, members = None, count = 'constexpr'):
+        def __init__(
+            self,
+            meta,
+            enum_name,
+            enum_type,
+            members = None,
+            count   = 'constexpr'
+        ):
 
             self.meta      = meta
             self.enum_name = enum_name
@@ -491,12 +521,17 @@ class __META__:
 
 
 
-        # By using a context-manager, the user can create the list of enumeration members with more complicated logic.
+        # By using a context-manager, the user can
+        # create the list of enumeration members
+        # with more complicated logic.
 
         def __enter__(self):
 
             if self.members is not None:
-                raise ValueError('Cannot use `Meta.enums` as a context-manager when members are already provided.')
+                raise ValueError(
+                    f'Cannot use `Meta.enums` as a context-manager '
+                    f'when members are already provided.'
+                )
 
             self.members = []
 
@@ -504,7 +539,8 @@ class __META__:
 
 
 
-        # Here we generate the output whether or not a context-manager was actually used.
+        # Here we generate the output whether or
+        # not a context-manager was actually used.
 
         def __exit__(self, *dont_care_about_exceptions):
 
@@ -550,7 +586,9 @@ class __META__:
 
             if self.members:
 
-                with self.meta.enter(f'enum {self.enum_name}{enum_type_suffix}'):
+                with self.meta.enter(f'''
+                    enum {self.enum_name}{enum_type_suffix}
+                '''):
 
                     for name, value, just_name in justify(
                         (
@@ -576,7 +614,8 @@ class __META__:
 
 
             # Provide the amount of enumeration members that were defined;
-            # this is useful for creating arrays and iterating with for-loops and such.
+            # this is useful for creating arrays and iterating with
+            # for-loops and such.
 
             match self.count:
 
@@ -589,9 +628,12 @@ class __META__:
 
 
 
-                # Use a macro, but this will have the disadvantage of not being scoped and might result in a name conflict.
-                # Most of the time, enumerations are defined at the global level, so this wouldn't matter, but enumerations can
-                # also be declared within a function; if so, then another enumeration of the same name cannot be declared later
+                # Use a macro, but this will have the disadvantage of
+                # not being scoped and might result in a name conflict.
+                # Most of the time, enumerations are defined at the global
+                # level, so this wouldn't matter, but enumerations can
+                # also be declared within a function; if so, then another
+                # enumeration of the same name cannot be declared later
                 # or else there'll be multiple #defines with different values.
 
                 case 'define':
@@ -600,22 +642,28 @@ class __META__:
 
 
                 # Use a separate, anonymous enumeration definition to make the count.
-                # Unlike "define", this will be scoped, so it won't suffer the same issue of name conflicts.
-                # However, the compiler could emit warnings if comparisons are made between the enumeration
-                # members and this member count, because they are from different enumeration groups.
+                # Unlike "define", this will be scoped, so it won't suffer the same
+                # issue of name conflicts. However, the compiler could emit warnings
+                # if comparisons are made between the enumeration members and this
+                # member count, because they are from different enumeration groups.
 
                 case 'enum':
-                    self.meta.line(f'enum{enum_type_suffix} {{ {self.enum_name}_COUNT = {len(self.members)} }};')
+                    self.meta.line(f'''
+                        enum{enum_type_suffix} {{ {self.enum_name}_COUNT = {len(self.members)} }};
+                    ''')
 
 
 
                 # Use a constexpr declaration to declare the member count.
-                # Unlike "enum", the type of the constant is the same type as the underlying type of the enumeration,
-                # so the compiler shouldn't warn about comparisons between the two.
+                # Unlike "enum", the type of the constant is the same type
+                # as the underlying type of the enumeration, so the compiler
+                # shouldn't warn about comparisons between the two.
                 # This approach, however, relies on C23 or C++.
 
                 case 'constexpr':
-                    self.meta.line(f'static constexpr {self.enum_type} {self.enum_name}_COUNT = {len(self.members)};')
+                    self.meta.line(f'''
+                        static constexpr {self.enum_type} {self.enum_name}_COUNT = {len(self.members)};
+                    ''')
 
 
 
@@ -698,7 +746,9 @@ class __META__:
 
 
 
-        # Macros can be "overloaded" by doing concatenation of a preprocessor-time value.
+        # Macros can be "overloaded" by doing
+        # concatenation of a preprocessor-time value.
+        # e.g:
         # >
         # >    #define FOOBAR_ABC     3.14
         # >    #define FOOBAR_IJK     1000
@@ -721,10 +771,14 @@ class __META__:
             # Some coherency checks.
 
             if differences := OrderedSet(overloading) - parameters:
-                raise ValueError(f'Overloaded argument "{differences[0]}" not in macro\'s parameter-list.')
+                raise ValueError(
+                    f'Overloaded argument "{differences[0]}" not in macro\'s parameter-list.'
+                )
 
             if name in self.overloads and self.overloads[name] != (parameters, tuple(overloading.keys())):
-                raise ValueError(f'This overloaded macro instance has a different parameter-list from others.')
+                raise ValueError(
+                    f'This overloaded macro instance has a different parameter-list from others.'
+                )
 
 
 
@@ -850,21 +904,28 @@ class __META__:
 
 
 
-                # First iteration of the function should give us the condition of the if-statement.
+                # First iteration of the function should
+                # give us the condition of the if-statement.
 
                 iterator = function(item)
 
                 if not isinstance(iterator, types.GeneratorType):
-                    raise RuntimeError('The decorated function must be a generator.')
+                    raise RuntimeError(
+                        'The decorated function must be a generator.'
+                    )
 
                 try:
                     condition = next(iterator)
                 except StopIteration:
-                    raise RuntimeError('The function did not yield the condition of the if-statement.')
+                    raise RuntimeError(
+                        f'The function did not yield '
+                        f'the condition of the if-statement.'
+                    )
 
 
 
-                # Then generate the if-statement according to the desired style.
+                # Then generate the if-statement
+                # according to the desired style.
 
                 match item_i, style:
                     case _, 'if'      : entrance = (f'if ({condition})'     , None, None                               )
@@ -877,7 +938,8 @@ class __META__:
 
 
 
-                # Next iteration of the function should generate the code within the if-statement.
+                # Next iteration of the function should
+                # generate the code within the if-statement.
 
                 with self.enter(*entrance):
 
@@ -931,7 +993,8 @@ class __META__:
 
 
 
-        # If the first element of every entry's field-list is a non-tuple, then we assume that is the index of the entry.
+        # If the first element of every entry's field-list is a non-tuple,
+        # then we assume that is the index of the entry.
         # e.g:
         # >
         # >    Meta.lut(<table_name>, ((             static const struct { <type> <name>; <type> <name>; <type> <name>; } <table_name>[] =
@@ -948,7 +1011,8 @@ class __META__:
 
 
 
-        # The entries of the look-up table will be defined in sequential order with no explicit indices.
+        # The entries of the look-up table will be defined
+        # in sequential order with no explicit indices.
         # e.g:
         # >
         # >    Meta.lut(<table_name>, ((             static const struct { <type> <name>; <type> <name>; <type> <name>; } <table_name>[] =
@@ -964,13 +1028,15 @@ class __META__:
 
 
 
-        # The "table_name" argument can specify the type of the look-up table.
+        # The "table_name" argument can specify
+        # the type of the look-up table.
 
         match table_name:
 
 
 
-            # If the type for the look-up table's entries is given, then each field shouldn't have to specify the type.
+            # If the type for the look-up table's entries is given,
+            # then each field shouldn't have to specify the type.
             # e.g:
             # >
             # >    Meta.lut((<table_type>, <table_name>), ((        static const <table_type> <table_name>[] =
@@ -995,7 +1061,8 @@ class __META__:
 
 
 
-            # If the type for the look-up table's entries is not given, then we'll create the type based on the type of each field.
+            # If the type for the look-up table's entries is not given,
+            # then we'll create the type based on the type of each field.
             # e.g:
             # >
             # >    Meta.lut(<table_name>, ((             static const struct { <type> <name>; <type> <name>; <type> <name>; } <table_name>[] =
@@ -1086,8 +1153,10 @@ def do(*,
 
 
         # It's fine if the line is commented;
-        # this would mean that the meta-directive would still generate code,
-        # but where the meta-directive is isn't where the code would be inserted at right now.
+        # this would mean that the meta-directive
+        # would still generate code, but where the
+        # meta-directive is isn't where the code
+        # would be inserted at right now.
         # e.g:
         # >
         # >    // #include "output.meta"
@@ -1210,7 +1279,9 @@ def do(*,
 
                 if not meta_header_line.startswith('#') and source_file_path.suffix == '.py':
 
-                    break # Python files that are meta-directives should have the meta-header at the top.
+                    # Python files that are meta-directives
+                    # should have the meta-header at the top.
+                    break
 
                 else:
 
@@ -1360,7 +1431,10 @@ def do(*,
                     )
                     for meta_directive in meta_directives_of_include_directive_file_path
                 ],
-                RuntimeError(f'Meta-directives with the same output file path: "{include_directive_file_path}".')
+                RuntimeError(
+                    f'Meta-directives with the same output '
+                    f'file path: "{include_directive_file_path}".'
+                )
             )
 
 
@@ -1416,7 +1490,10 @@ def do(*,
                             function_name = None,
                         ),
                     ],
-                    RuntimeError(f'Meta-directives imports "{symbol}" but no meta-directive exports that.')
+                    RuntimeError(
+                        f'Meta-directives imports "{symbol}" '
+                        f'but no meta-directive exports that.'
+                    )
                 )
 
 
@@ -1436,16 +1513,23 @@ def do(*,
 
 
 
-    # If it's just a bare meta-header, then the meta-directive implicitly imports everything.
+    # If it's just a bare meta-header,
+    # then the meta-directive implicitly
+    # imports everything.
 
     for meta_directive in meta_directives:
-        if not meta_directive.exports and not meta_directive.imports and not meta_directive.global_exporter:
+        if not (
+            meta_directive.exports
+            or meta_directive.imports
+            or meta_directive.global_exporter
+        ):
             meta_directive.imports = all_exports
 
 
 
-    # If the meta-directive explicitly imports nothing, then its exports will
-    # globally be implicitly imported into every other meta-directive.
+    # If the meta-directive explicitly imports
+    # nothing, then its exports will globally be
+    # implicitly imported into every other meta-directive.
 
     implicit_global_import = OrderedSet(
         symbol
@@ -1475,7 +1559,8 @@ def do(*,
 
 
 
-            # This meta-directive doesn't have all of its imports satisfied yet.
+            # This meta-directive doesn't have
+            # all of its imports satisfied yet.
 
             if not all(symbol in available_symbols for symbol in meta_directive.imports):
                 continue
@@ -1518,7 +1603,8 @@ def do(*,
 
     ################################################################################################################################
     #
-    # The meta-decorator that handles the the set-up and resolution of a meta-directive's execution.
+    # The meta-decorator that handles the the set-up
+    # and resolution of a meta-directive's execution.
     #
 
     current_meta_directive_index = 0
@@ -1557,25 +1643,34 @@ def do(*,
 
 
 
-            # Meta is special in that it needs to be a global singleton. This is for meta-directives that
-            # define functions that use Meta itself to generate code, and that function might be called
-            # in a different meta-directive. They all need to refer to the same object, so one singleton
-            # must be made for everyone to refer to. Still, checks are put in place to make Meta illegal
-            # to use in meta-directives that do not have an associated include-directive.
+            # Meta is special in that it needs to be a
+            # global singleton. This is for meta-directives
+            # that define functions that use Meta itself
+            # to generate code, and that function might
+            # be called in a different meta-directive.
+            # They all need to refer to the same object,
+            # so one singleton must be made for everyone
+            # to refer to. Still, checks are put in place
+            # to make Meta illegal to use in meta-directives
+            # that do not have an associated include-directive.
 
             function_globals = { 'Meta' : Meta }
 
 
 
-            # We deepcopy exported values to be then put in the function's global namespace
-            # so that if a meta-directive mutates it for some reason,
-            # it'll only be contained within that meta-directive; this isn't really necessary,
-            # but since meta-directives are evaluated mostly out-of-order, it helps keep the
-            # uncertainty factor lower. This, however, does induce a performance hit if the object
-            # is quite large.
+            # We deepcopy exported values to be then put in
+            # the function's global namespace so that if a
+            # meta-directive mutates it for some reason, it'll
+            # only be contained within that meta-directive;
+            # this isn't really necessary, but since meta-directives
+            # are evaluated mostly out-of-order, it helps keep the
+            # uncertainty factor lower. This, however, does induce
+            # a performance hit if the object is quite large.
 
             for symbol in meta_directive.imports:
-                if isinstance(meta_globals[symbol], types.ModuleType): # Modules are not deepcopy-able.
+
+                # Modules are not deepcopy-able.
+                if isinstance(meta_globals[symbol], types.ModuleType):
                     function_globals[symbol] = meta_globals[symbol]
                 else:
                     function_globals[symbol] = copy.deepcopy(meta_globals[symbol])
@@ -1590,7 +1685,8 @@ def do(*,
 
 
 
-            # Copy the exported symbols into the collective symbol namespace so far.
+            # Copy the exported symbols into the
+            # collective symbol namespace so far.
 
             for symbol in meta_directive.exports:
 
@@ -1637,7 +1733,8 @@ def do(*,
 
     ################################################################################################################################
     #
-    # Routine to handle exceptions that occured during compilation or execution of meta-directives.
+    # Routine to handle exceptions that occured
+    # during compilation or execution of meta-directives.
     #
 
     def diagnose(error):
@@ -1663,25 +1760,33 @@ def do(*,
                 ]
 
                 if not meta_directive:
-                    raise # Syntax error somewhere else obscure (e.g. meta-directive running `exec` or importing).
+                    # Syntax error somewhere else obscure
+                    # e.g: meta-directive running `exec` or importing.
+                    raise
 
                 meta_directive, = meta_directive
 
                 contexts += [types.SimpleNamespace(
-                    file_path     = meta_directive.source_file_path,
-                    line_number   = (meta_directive.meta_header_line_number + 1) + error.lineno - meta_directive.body_line_number,
                     function_name = None,
+                    file_path     = meta_directive.source_file_path,
+                    line_number   = (
+                        (meta_directive.meta_header_line_number + 1)
+                            + error.lineno
+                            - meta_directive.body_line_number
+                    ),
                 )]
 
 
 
-            # For most errors we can inspect the traceback to show all the levels of function calls.
+            # For most errors we can inspect the traceback
+            # to show all the levels of function calls.
 
             case _:
 
 
 
-                # Get the tracebacks after we begin executing the meta-directive's Python snippet.
+                # Get the tracebacks after we begin executing
+                # the meta-directive's Python snippet.
 
                 traces = traceback.extract_tb(sys.exc_info()[2])
 
@@ -1689,33 +1794,40 @@ def do(*,
                     del traces[0]
 
                 if not traces:
-                    raise # Otherwise something else happened outside of the meta-directive...
+                    # Otherwise something else happened
+                    # outside of the meta-directive...
+                    raise
 
 
 
-                # Find each level of the stack; some might be in a meta-directive while others are in a imported module.
+                # Find each level of the stack; some might be in a
+                # meta-directive while others are in a imported module.
 
                 for trace in traces:
 
-                   meta_directive = [
+                    meta_directive = [
                        meta_directive
                        for meta_directive in meta_directives
                        if meta_directive.bytecode_name == trace.filename
                     ]
 
-                   if meta_directive:
-                       meta_directive,     = meta_directive
-                       context_file_path   = meta_directive.source_file_path
-                       context_line_number = (meta_directive.meta_header_line_number + 1) + trace.lineno - meta_directive.body_line_number
-                   else:
-                       context_file_path   = pathlib.Path(trace.filename)
-                       context_line_number = trace.lineno
+                    if meta_directive:
+                        meta_directive,     = meta_directive
+                        context_file_path   = meta_directive.source_file_path
+                        context_line_number = (
+                            (meta_directive.meta_header_line_number + 1)
+                                + trace.lineno
+                                - meta_directive.body_line_number
+                        )
+                    else:
+                        context_file_path   = pathlib.Path(trace.filename)
+                        context_line_number = trace.lineno
 
-                   contexts += [types.SimpleNamespace(
-                       file_path     = context_file_path,
-                       line_number   = context_line_number,
-                       function_name = '#meta' if trace.name == '__META_DIRECTIVE__' else trace.name,
-                   )]
+                    contexts += [types.SimpleNamespace(
+                        file_path     = context_file_path,
+                        line_number   = context_line_number,
+                        function_name = '#meta' if trace.name == '__META_DIRECTIVE__' else trace.name,
+                    )]
 
 
 
@@ -1734,7 +1846,8 @@ def do(*,
 
 
 
-        # Every meta-directive is executed within a function context wrapped by the decorator.
+        # Every meta-directive is executed within
+        # a function context wrapped by the decorator.
 
         meta_code = [
             f'@__META_DECORATOR__(__META_GLOBALS__)',
@@ -1743,7 +1856,8 @@ def do(*,
 
 
 
-        # List the things that the function is expected to define in the global namespace.
+        # List the things that the function is
+        # expected to define in the global namespace.
 
         if meta_directive.exports:
             meta_code += [
@@ -1753,9 +1867,11 @@ def do(*,
 
 
 
-        # If the #meta directive has no code and doesn't export anything,
-        # the function would end up empty, which is invalid Python syntax;
-        # having a `pass` is a simple fix for this edge case.
+        # If the #meta directive has no code and
+        # doesn't export anything, the function
+        # would end up empty, which is invalid Python
+        # syntax; having a `pass` is a simple fix
+        # for this edge case.
 
         meta_code += ['    pass']
 
@@ -1778,9 +1894,12 @@ def do(*,
 
 
 
-        # Compile the meta-directive; this has to be done for each meta-directive individually
-        # rather than all together at once because a syntax error can "leak" across multiple
-        # meta-directives, to which it's then hard to identify where the exact source of the syntax error is.
+        # Compile the meta-directive; this has to
+        # be done for each meta-directive individually
+        # rather than all together at once because a
+        # syntax error can "leak" across multiple meta-directives,
+        # to which it's then hard to identify where the
+        # exact source of the syntax error is.
 
         meta_directive.bytecode_name = f'MetaDirective({meta_directive.source_file_path}:{meta_directive.meta_header_line_number})'
 

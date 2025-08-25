@@ -680,8 +680,8 @@ class __META__:
 
                 # Unknown member-count style.
 
-                case _:
-                    assert False
+                case unknown:
+                    raise ValueError(f'Unknown member-count style of {repr(unknown)}.')
 
 
 

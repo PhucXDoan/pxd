@@ -38,6 +38,7 @@ class MetaError(Exception):
             ]
 
 
+
         # Log each context.
 
         log()
@@ -125,7 +126,17 @@ class MetaError(Exception):
                     # >    "[ERROR] closing parenthesis ')' does not match opening parenthesis '{' on line 10"
                     # >
 
-                    log(f'[ERROR] {self.underlying_exception.args[0]}')
+                    with Indent('[ERROR] ', hanging = True):
+
+                        log(f'Syntax error.')
+
+                        if self.underlying_exception.filename == '<string>':
+                            log(
+                                f'This seems like a nested SyntaxError exception; '
+                                f'the error in the evaluated string might be on line {self.underlying_exception.lineno}.'
+                            )
+
+                        log(f'> {self.underlying_exception.args[0]}')
 
 
 
@@ -1741,93 +1752,90 @@ def do(*,
 
 
 
-        # Determine the stack-trace.
+        # Get the tracebacks after we begin executing
+        # the meta-directive's Python snippet.
+
+        traces = traceback.extract_tb(sys.exc_info()[2])
+
+        while traces and traces[0].name != '__META_DIRECTIVE__':
+            del traces[0]
 
         contexts = []
 
-        match error:
+
+
+        # A meta-directive caused this syntax error.
+
+        if isinstance(error, SyntaxError) and not traces:
+
+            meta_directive = [
+                meta_directive
+                for meta_directive in meta_directives
+                if meta_directive.bytecode_name == error.filename
+            ]
+
+            if not meta_directive:
+                # Syntax error somewhere else obscure
+                # e.g: meta-directive running `exec` or importing.
+                raise
+
+            meta_directive, = meta_directive
+
+            contexts += [types.SimpleNamespace(
+                function_name = None,
+                file_path     = meta_directive.source_file_path,
+                line_number   = (
+                    (meta_directive.meta_header_line_number + 1)
+                        + error.lineno
+                        - meta_directive.body_line_number
+                ),
+            )]
 
 
 
-            # Most likely a meta-directive caused this syntax error.
+        # For most errors we can inspect the traceback
+        # to show all the levels of function calls.
 
-            case SyntaxError():
+        else:
+
+
+
+            # Something else might've happened outside of the meta-directive.
+            # TODO Example?
+
+            if not traces:
+                raise
+
+
+
+            # Find each level of the stack; some might be in a
+            # meta-directive while others are in a imported module.
+
+            for trace in traces:
 
                 meta_directive = [
-                    meta_directive
-                    for meta_directive in meta_directives
-                    if meta_directive.bytecode_name == error.filename
+                   meta_directive
+                   for meta_directive in meta_directives
+                   if meta_directive.bytecode_name == trace.filename
                 ]
 
-                if not meta_directive:
-                    # Syntax error somewhere else obscure
-                    # e.g: meta-directive running `exec` or importing.
-                    raise
-
-                meta_directive, = meta_directive
+                if meta_directive:
+                    meta_directive,     = meta_directive
+                    context_file_path   = meta_directive.source_file_path
+                    context_line_number = (
+                        (meta_directive.meta_header_line_number + 1)
+                            + trace.lineno
+                            - meta_directive.body_line_number
+                    )
+                else:
+                    context_file_path   = pathlib.Path(trace.filename)
+                    context_line_number = trace.lineno
 
                 contexts += [types.SimpleNamespace(
-                    function_name = None,
-                    file_path     = meta_directive.source_file_path,
-                    line_number   = (
-                        (meta_directive.meta_header_line_number + 1)
-                            + error.lineno
-                            - meta_directive.body_line_number
-                    ),
+                    file_path     = context_file_path,
+                    line_number   = context_line_number,
+                    function_name = '#meta' if trace.name == '__META_DIRECTIVE__' else trace.name,
                 )]
-
-
-
-            # For most errors we can inspect the traceback
-            # to show all the levels of function calls.
-
-            case _:
-
-
-
-                # Get the tracebacks after we begin executing
-                # the meta-directive's Python snippet.
-
-                traces = traceback.extract_tb(sys.exc_info()[2])
-
-                while traces and traces[0].name != '__META_DIRECTIVE__':
-                    del traces[0]
-
-                if not traces:
-                    # Otherwise something else happened
-                    # outside of the meta-directive...
-                    raise
-
-
-
-                # Find each level of the stack; some might be in a
-                # meta-directive while others are in a imported module.
-
-                for trace in traces:
-
-                    meta_directive = [
-                       meta_directive
-                       for meta_directive in meta_directives
-                       if meta_directive.bytecode_name == trace.filename
-                    ]
-
-                    if meta_directive:
-                        meta_directive,     = meta_directive
-                        context_file_path   = meta_directive.source_file_path
-                        context_line_number = (
-                            (meta_directive.meta_header_line_number + 1)
-                                + trace.lineno
-                                - meta_directive.body_line_number
-                        )
-                    else:
-                        context_file_path   = pathlib.Path(trace.filename)
-                        context_line_number = trace.lineno
-
-                    contexts += [types.SimpleNamespace(
-                        file_path     = context_file_path,
-                        line_number   = context_line_number,
-                        function_name = '#meta' if trace.name == '__META_DIRECTIVE__' else trace.name,
-                    )]
 
 
 
@@ -1916,7 +1924,6 @@ def do(*,
     #
 
     output_directory_path.mkdir(parents = True, exist_ok = True)
-
 
     globals = { '__META_DECORATOR__' : __META_DECORATOR__, '__META_GLOBALS__' : {} }
 

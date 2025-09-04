@@ -976,168 +976,198 @@ class __META__:
     ################################################################################################################################
     #
     # Helper routine to create look-up tables.
+    # > e.g:
+    # >
+    # >    Meta.lut('PLANETS', (
+    # >        (
+    # >            planet_i,
+    # >            ('char*', 'name'  , name  ),
+    # >            ('i32'  , 'mass'  , mass  ),
+    # >            ('f64'  , 'radius', radius),
+    # >        ) for planet_i, (name, mass, radius) in enumerate(PLANETS)
+    # >    ))
+    # >
     #
-    # Example:
-    # >
-    # >    Meta.lut('PLANETS', ((
-    # >        ('char*', 'name'  , planet.name  ),
-    # >        ('f32'  , 'mass'  , planet.mass  ),
-    # >        ('f32'  , 'radius', planet.radius),
-    # >    ) for planet in planets))
-    # >
-    #
-    # Output:
-    # >
-    # >    static const struct { char* name; f32 mass; f32 radius; } PLANETS[] =
-    # >        {
-    # >            { .name = <value>, .mass = <value>, .radius = <value> },
-    # >            { .name = <value>, .mass = <value>, .radius = <value> },
-    # >            { .name = <value>, .mass = <value>, .radius = <value> },
-    # >        };
-    # >
 
     @__codegen
-    def lut(self, table_name, entries):
+    def lut(self, *arguments):
 
 
 
-        # e.g: Meta.lut(<table_name>, (f(x) for x in xs))
+        # Parse the argument format.
 
-        entries = tuple(entries)
-
-
-
-        # If the first element of every entry's field-list is a non-tuple,
-        # then we assume that is the index of the entry.
-        # e.g:
-        # >
-        # >    Meta.lut(<table_name>, ((             static const struct { <type> <name>; <type> <name>; <type> <name>; } <table_name>[] =
-        # >        <index>,                              {
-        # >        (<type>, <name>, <value>),   ->           [<index>] = { .<name> = <value>, .<name> = <value>, .<name> = <value> },
-        # >        (<type>, <name>, <value>),                [<index>] = { .<name> = <value>, .<name> = <value>, .<name> = <value> },
-        # >        (<type>, <name>, <value>),                [<index>] = { .<name> = <value>, .<name> = <value>, .<name> = <value> },
-        # >    ) for x in xs))                           };
-        # >
-
-        if all(entry and not isinstance(entry[0], tuple) for entry in entries):
-            indices = [c_repr(index) for index, *fields in entries]
-            entries = [fields        for index, *fields in entries]
+        match arguments:
 
 
 
-        # The entries of the look-up table will be defined
-        # in sequential order with no explicit indices.
-        # e.g:
-        # >
-        # >    Meta.lut(<table_name>, ((             static const struct { <type> <name>; <type> <name>; <type> <name>; } <table_name>[] =
-        # >        (<type>, <name>, <value>),            {
-        # >        (<type>, <name>, <value>),   ->           { .<name> = <value>, .<name> = <value>, .<name> = <value> },
-        # >        (<type>, <name>, <value>),                { .<name> = <value>, .<name> = <value>, .<name> = <value> },
-        # >    ) for x in xs))                               { .<name> = <value>, .<name> = <value>, .<name> = <value> },
-        # >                                             };
-        # >
-
-        else:
-            indices = None
-
-
-
-        # The "table_name" argument can specify
-        # the type of the look-up table.
-
-        match table_name:
-
-
-
-            # If the type for the look-up table's entries is given,
-            # then each field shouldn't have to specify the type.
+            # The type for the table is provided.
             # e.g:
             # >
-            # >    Meta.lut((<table_type>, <table_name>), ((        static const <table_type> <table_name>[] =
-            # >        (name, value),                                   {
-            # >        (name, value),                          ->           { .<name> = <value>, .<name> = <value>, .<name> = <value> },
-            # >        (name, value),                                       { .<name> = <value>, .<name> = <value>, .<name> = <value> },
-            # >    ) for x in xs))                                          { .<name> = <value>, .<name> = <value>, .<name> = <value> },
-            # >                                                         };
+            # >    static const struct <table_type> <table_name>[] =
+            # >        {
+            # >            [<index>] = { <value>, <value>, <value> },
+            # >            [<index>] = { <value>, <value>, <value> },
+            # >            [<index>] = { <value>, <value>, <value> },
+            # >        };
             # >
 
-            case (table_type, table_name):
-
-                values_of_entries = [
-                    [f'.{name} = {c_repr(value)}' for name, value in entry]
-                    for entry in entries
-                ]
-
-                field_names_of_entries = [
-                    (name for name, value in entry)
-                    for entry in entries
-                ]
+            case (table_type, table_name, table_rows):
+                pass
 
 
 
-            # If the type for the look-up table's entries is not given,
-            # then we'll create the type based on the type of each field.
+            # The type for the table will be created automatically.
             # e.g:
             # >
-            # >    Meta.lut(<table_name>, ((             static const struct { <type> <name>; <type> <name>; <type> <name>; } <table_name>[] =
-            # >        (<type>, <name>, <value>),            {
-            # >        (<type>, <name>, <value>),   ->           { .<name> = <value>, .<name> = <value>, .<name> = <value> },
-            # >        (<type>, <name>, <value>),                { .<name> = <value>, .<name> = <value>, .<name> = <value> },
-            # >    ) for x in xs))                               { .<name> = <value>, .<name> = <value>, .<name> = <value> },
-            # >                                              };
+            # >    static const struct { <type> <name>; <type> <name>; <type> <name>; } <table_name>[] =
+            # >        {
+            # >            [<index>] = { .<name> = <value>, .<name> = <value>, .<name> = <value> },
+            # >            [<index>] = { .<name> = <value>, .<name> = <value>, .<name> = <value> },
+            # >            [<index>] = { .<name> = <value>, .<name> = <value>, .<name> = <value> },
+            # >        };
             # >
 
-            case table_name:
+            case (table_name, table_rows):
 
-                members = OrderedSet(
-                    f'{type} {name};'
-                    for entry in entries
-                    for type, name, value in entry
-                )
-
-                table_type = f'struct {{ {' '.join(members)} }}'
-
-                values_of_entries = [
-                    [c_repr(value) for type, name, value in entry]
-                    for entry in entries
-                ]
-
-                field_names_of_entries = [
-                    [name for type, name, value in entry]
-                    for entry in entries
-                ]
+                table_type = None
 
 
 
-        # Some coherency checks.
-
-        if indices is not None and (dupe := find_dupe(indices)) is not ...:
-            raise ValueError(f'Duplicate index: {repr(dupe)}.')
-
-        for field_names_of_entry in field_names_of_entries:
-            if (dupe := find_dupe(field_names_of_entry)) is not ...:
-                raise ValueError(f'Duplicate field: {repr(dupe)}.')
+            case unknown:
+                raise ValueError(f'Unknown set of arguments: {repr(unknown)}.')
 
 
 
-        # Output the look-up table.
+        # Make each table row have an index, or have it be `None` if not provided.
+        # e.g:
+        # >
+        # >    Meta.lut(<table_name>, ((
+        # >        <index>,
+        # >        (<type>, <name>, <value>),
+        # >        (<type>, <name>, <value>),
+        # >        (<type>, <name>, <value>),
+        # >    ) for x in xs))
+        # >
 
-        lines = [
-            '{ ' + ', '.join(just_values_of_entry) + ' },'
-            for just_values_of_entry in justify(
-                (('<', value_of_entry) for value_of_entry in values_of_entry)
-                for values_of_entry in values_of_entries
-            )
-        ]
+        table_rows = list(list(row) for row in table_rows)
 
-        if indices is not None:
-            lines = [
-                f'[{index}] = {value}'
-                for index, value in zip(justify(('<', index) for index in indices), lines)
-            ]
+        for row_i, row in enumerate(table_rows):
+            if row and (isinstance(row[0], tuple) or isinstance(row[0], list)):
+                table_rows[row_i] = [None, *row]
+
+
+
+        # Determine the type of each member.
+
+        for table_row_i, (row_indexing, *members) in enumerate(table_rows):
+
+            for member_i, member in enumerate(members):
+
+                match member:
+
+
+
+                    # The type of each member is explicitly given.
+                    # e.g:
+                    # >
+                    # >    Meta.lut(<table_name>, ((
+                    # >        <index>,
+                    # >        (<type>, <name>, <value>),
+                    # >        (<type>, <name>, <value>),
+                    # >        (<type>, <name>, <value>),
+                    # >    ) for x in xs))
+                    # >
+
+                    case [member_type, member_name, member_value]:
+
+                        if table_type is not None:
+                            raise ValueError(
+                                f'Member type shouldn\'t be given when '
+                                f'the table type is already provided.'
+                            )
+
+
+
+                    # The type of each member is not given either because
+                    # it's not needed or it'll be inferred automatically.
+                    # e.g:
+                    # >
+                    # >    Meta.lut(<table_name>, ((
+                    # >        <index>,
+                    # >        (<name>, <value>),
+                    # >        (<name>, <value>),
+                    # >        (<name>, <value>),
+                    # >    ) for x in xs))
+                    # >
+
+                    case [member_name, member_value]:
+
+                        member_type = None
+
+
+
+                    case unknown:
+                        raise ValueError(f'Unknown row member format: {repr(unknown)}.')
+
+
+
+                members[member_i] = [member_type, member_name, c_repr(member_value)]
+
+
+
+            table_rows[table_row_i] = [row_indexing, members]
+
+
+
+        # Determine the table type.
+
+        if table_type is None:
+
+            match table_rows:
+
+
+
+                # This is just how we're going to handle empty tables.
+
+                case []:
+
+                    table_type = 'struct {}'
+
+
+
+                # Create the type for the table.
+
+                case [[first_row_indexing, first_row_members], *rest]:
+
+                    table_type = f'struct {{ {' '.join(
+                        [
+                            f'{member_type if member_type is not None else f'typeof({member_value})'} {member_name};'
+                            for member_type, member_name, member_value in first_row_members
+                        ] if table_rows else []
+                    )} }}'
+
+
+
+                case unknown:
+                    assert False, unknown
+
+
+
+        # Generate the table with nice, aligned columns.
 
         with self.enter(f'static const {table_type} {table_name}[] ='):
-            self.line(lines)
+
+            for just_row_indexing, *just_fields in justify(
+                (
+                    ('<', f'[{row_indexing}] = ' if row_indexing is not None else ''),
+                    *(
+                        ('<', f'.{member_name} = {member_value}')
+                        for member_type, member_name, member_value in members
+                    ),
+                )
+                for row_indexing, members in table_rows
+            ):
+                self.line(f'{just_row_indexing}{{ {', '.join(just_fields)} }},')
 
 
 

@@ -234,9 +234,10 @@ class __META__:
 
         # Indicate origin of the meta-directive in the generated output.
 
-        self.line(f'''
-            // [{self.meta_directive.source_file_path}:{self.meta_directive.include_directive_line_number}].
-        ''')
+        # TODO Have as an option?
+        # self.line(f'''
+        #     // [{self.meta_directive.source_file_path.as_posix()}:{self.meta_directive.include_directive_line_number}].
+        # ''')
 
 
 

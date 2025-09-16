@@ -182,6 +182,7 @@ class __META__:
         self.indent         = 0
         self.within_macro   = False
         self.overloads      = {}
+        self.section_text   = None
 
 
 
@@ -329,6 +330,11 @@ class __META__:
 
     @__codegen
     def line(self, *args):
+
+        if self.section_text is not None:
+            section_text      = self.section_text
+            self.section_text = None
+            self.line(section_text)
 
         if not args: # Create single empty line for `Meta.line()`.
             args = ['''
@@ -1076,6 +1082,23 @@ class __META__:
                 for row_indexing, members in table_rows
             ):
                 self.line(f'{just_row_indexing}{{ {', '.join(just_fields)} }},')
+
+
+
+    ################################################################################################################################
+    #
+    # Helper routine to create a section header if any code was generated.
+    #
+
+    @__codegen
+    @contextlib.contextmanager
+    def section(self, section_text):
+
+        self.section_text = section_text
+
+        yield
+
+        self.section_text = None
 
 
 

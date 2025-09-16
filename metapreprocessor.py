@@ -182,7 +182,7 @@ class __META__:
         self.indent         = 0
         self.within_macro   = False
         self.overloads      = {}
-        self.section_text   = None
+        self.section_stack  = []
 
 
 
@@ -331,15 +331,21 @@ class __META__:
     @__codegen
     def line(self, *args):
 
-        if self.section_text is not None:
-            section_text      = self.section_text
-            self.section_text = None
-            self.line(section_text)
+
+
+        if self.section_stack:
+            text               = self.section_stack[ -1]
+            self.section_stack = self.section_stack[:-1]
+            self.line(text)
+
+
 
         if not args: # Create single empty line for `Meta.line()`.
             args = ['''
 
             ''']
+
+
 
         for arg in args:
 
@@ -1092,13 +1098,14 @@ class __META__:
 
     @__codegen
     @contextlib.contextmanager
-    def section(self, section_text):
+    def section(self, text):
 
-        self.section_text = section_text
+        original_depth      = len(self.section_stack)
+        self.section_stack += [text]
 
         yield
 
-        self.section_text = None
+        self.section_stack = self.section_stack[:original_depth]
 
 
 

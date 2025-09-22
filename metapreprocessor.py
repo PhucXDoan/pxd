@@ -342,7 +342,6 @@ class __META__:
 
         if not args: # Create single empty line for `Meta.line()`.
             args = ['''
-
             ''']
 
 

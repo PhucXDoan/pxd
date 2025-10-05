@@ -199,7 +199,11 @@ def parse_sexp(input, mapping = default_mapping):
 
                 # Found end of the unquoted symbol.
 
-                if input[0] in string.whitespace + '#()' and quote is None:
+                # TODO Should something like "unconnected-(U1-PE2-Pad1)"
+                #      be parsed as ('unconnected-', ('U1-PE2-Pad1',))
+                #      or as ('unconnected-(U1-PE2-Pad1)')?
+
+                if input[0] in string.whitespace + '#' and quote is None:
                     break
 
 

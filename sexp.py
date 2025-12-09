@@ -179,8 +179,9 @@ def parse_sexp(input, mapping = default_mapping):
 
         else:
 
-            value = ''
-            quote = None # TODO Escaping.
+            value             = ''
+            quote             = None # TODO Escaping.
+            parentheses_depth = 0
 
             while True:
 
@@ -199,11 +200,7 @@ def parse_sexp(input, mapping = default_mapping):
 
                 # Found end of the unquoted symbol.
 
-                # TODO Should something like "unconnected-(U1-PE2-Pad1)"
-                #      be parsed as ('unconnected-', ('U1-PE2-Pad1',))
-                #      or as ('unconnected-(U1-PE2-Pad1)')?
-
-                if input[0] in string.whitespace + '#' and quote is None:
+                if input[0] in (string.whitespace + '#') and quote is None:
                     break
 
 
@@ -214,6 +211,34 @@ def parse_sexp(input, mapping = default_mapping):
 
                 if input[0] in ('"', "'", '`') and value == '':
                     quote = input[0]
+
+
+
+                # For something like `(a b c unconnected-(ABC))`,
+                # it'll be interpreted as: `('a', 'b', 'c', 'unconnected-(ABC)')`
+                #
+                # but for `(a b c unconnected)`,
+                # it'll be interpreted as: `('a', 'b', 'c', 'unconnected')`.
+                #
+                # So we have to keep track of the parentheses-depth to know
+                # whether or not we should consider `(` and `)` the end of
+                # the token.
+
+                if quote is None:
+
+                    if input[0] == '(':
+
+                        parentheses_depth += 1
+
+                    elif input[0] == ')':
+
+                        if parentheses_depth >= 1:
+
+                            parentheses_depth -= 1
+
+                        else:
+
+                            break
 
 
 

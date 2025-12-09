@@ -63,21 +63,6 @@ def find_dupe(values):
 
 
 
-def mk_dict(items):
-
-    items = tuple(items)
-
-    if (dupe := find_dupe(key for key, value in items)) is not ...:
-        raise KeyError(dupe)
-
-    return dict(items)
-
-
-
-################################################################################################################################
-
-
-
 def c_repr(value):
     match value:
         case bool  () : return str(value).lower()

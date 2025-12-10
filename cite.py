@@ -1,5 +1,5 @@
 import re, pathlib, string, collections
-from ..pxd.utils import types, coalesce, root, justify, did_you_mean, OrderedSet
+from ..pxd.utils import types, coalesce, make_main_relative_path, justify, did_you_mean, OrderedSet
 from ..pxd.log   import log, ANSI
 from ..pxd.ui    import UI
 
@@ -27,7 +27,7 @@ def _get_file_paths():
     # there's no easy way to do recursive `**` globs that's built-in. Sigh.
     #
 
-    citeignore_file_path = root(f'./.citeignore')
+    citeignore_file_path = make_main_relative_path(f'./.citeignore')
 
     if citeignore_file_path.is_file():
 
@@ -61,7 +61,7 @@ def _get_file_paths():
 
     return [
         pathlib.Path(parent_file_path, file_name)
-        for parent_file_path, dirs, file_names in root('./').walk()
+        for parent_file_path, dirs, file_names in make_main_relative_path('./').walk()
         for file_name in file_names
         if not pathlib.Path(parent_file_path, file_name).is_dir() and not is_ignored(pathlib.Path(parent_file_path, file_name))
     ]

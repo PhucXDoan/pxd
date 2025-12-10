@@ -76,7 +76,7 @@ def c_repr(value):
 
 
 
-def root(*arguments):
+def make_main_relative_path(*arguments):
 
     def mk(parts):
         return pathlib.Path(__main__.__file__).parent.joinpath(*parts).relative_to(pathlib.Path.cwd(), walk_up = True)

@@ -632,6 +632,8 @@ class Interface:
                         FALSY  = ('0', 'f', 'n', 'no' , 'false')
                         TRUTHY = ('1', 't', 'y', 'yes', 'true' )
 
+                        value = value.lower()
+
                         if value in FALSY:
                             value = False
 

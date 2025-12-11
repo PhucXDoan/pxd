@@ -74,7 +74,6 @@ class Interface:
         self.hook        = hook
         self.new_verb(
             {
-                'name'        : ...,
                 'description' : f"Show usage of {repr(self.name)}; pass 'all' for all details."
             },
             {
@@ -260,11 +259,11 @@ class Interface:
 
             # Process verb properties.
 
-            verb_name        = properties_of_verb.pop('name')
+            verb_name        = properties_of_verb.pop('name', None)
             verb_description = properties_of_verb.pop('description')
             verb_more_help   = properties_of_verb.pop('more_help', False)
 
-            if verb_name is ...:
+            if verb_name is None:
                 verb_name = function.__name__
 
             if not verb_name.isidentifier():

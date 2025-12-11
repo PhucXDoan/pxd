@@ -303,7 +303,7 @@ class Interface:
                 parameter_identifier_name = parameter_property.pop('name')
                 parameter_description     = parameter_property.pop('description')
                 parameter_type            = parameter_property.pop('type')
-                parameter_has_default     = 'default' in parameter_property
+                parameter_has_default     = parameter_property.get('default', ...) is not ...
                 parameter_default         = parameter_property.pop('default', None)
                 parameter_flag_only       = parameter_property.pop('flag_only', None)
 

@@ -111,6 +111,10 @@ class Interface:
 
         if not shown_verbs and parameters.verb_name not in (None, 'all'):
 
+            self.help(types.SimpleNamespace(
+                verb_name = None,
+            ))
+
             self.logger.error(did_you_mean(
                 'No verb goes by the name of {}.',
                 parameters.verb_name,
@@ -164,6 +168,11 @@ class Interface:
 
             if parameters.verb_name is not None:
 
+
+
+                # Default breakdown of the different
+                # parameters that the verb takes as inputs.
+
                 for parameter_schema in verb.parameter_schemas:
 
                     output += f'        {parameter_schema.formatted_name} {parameter_schema.description}' '\n'
@@ -201,6 +210,20 @@ class Interface:
 
 
 
+                # The verb can supply additional
+                # information at run-time.
+
+                if verb.more_help:
+
+                    output += '\n'.join(
+                        f'            {line}'
+                        for line in verb.function(None).splitlines()
+                    ) + '\n'
+
+                    output += '\n'
+
+
+
             # Indicator to show that some verbs were filtered out.
 
             if verbs_were_filtered_out:
@@ -227,6 +250,7 @@ class Interface:
 
             verb_name        = properties_of_verb.pop('name')
             verb_description = properties_of_verb.pop('description')
+            verb_more_help   = properties_of_verb.pop('more_help', False)
 
             if verb_name is ...:
                 verb_name = function.__name__
@@ -323,6 +347,7 @@ class Interface:
             self.verbs += [types.SimpleNamespace(
                 name              = verb_name,
                 description       = verb_description,
+                more_help         = verb_more_help,
                 parameter_schemas = parameter_schemas,
                 function          = function,
             )]

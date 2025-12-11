@@ -207,6 +207,7 @@ def some_verb_here(parameters):
     {
         'name'        : 'subtracting',
         'description' : 'Subtracts two given numbers.',
+        'more_help'   : True,
     },
     {
         'name'        : 'minuend',
@@ -220,6 +221,9 @@ def some_verb_here(parameters):
     },
 )
 def some_verb_here(parameters):
+
+    if parameters is None:
+        return 'meow!\n'
 
     print(parameters)
 

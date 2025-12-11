@@ -653,33 +653,36 @@ class Interface:
 
                     # Pick from a list of options.
 
-                    case list() | tuple():
+                    case list() | tuple() | dict():
 
-                        if value not in parameter_schema.type:
+
+
+                        options = parameter_schema.type
+
+                        if isinstance(parameter_schema.type, dict):
+                            options = list(parameter_schema.type.keys())
+
+
+
+                        if value not in options:
+
+                            self.help(types.SimpleNamespace(
+                                verb_name = verb.name,
+                            ))
 
                             self.logger.error(did_you_mean(
                                 f'Parameter {parameter_schema.formatted_name} '
                                 f'given invalid option of {{}}.',
                                 value,
-                                parameter_schema.type,
+                                options,
                             ))
 
                             sys.exit(1)
 
-                    case dict():
 
-                        if value not in parameter_schema.type:
 
-                            self.logger.error(did_you_mean(
-                                f'Parameter {parameter_schema.formatted_name} '
-                                f'given invalid option of {{}}.',
-                                value,
-                                parameter_schema.type.keys(),
-                            ))
-
-                            sys.exit(1)
-
-                        value = parameter_schema.type[value]
+                        if isinstance(parameter_schema.type, dict):
+                            value = parameter_schema.type[value]
 
 
 

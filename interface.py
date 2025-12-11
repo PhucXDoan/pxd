@@ -2,6 +2,8 @@ import types, difflib, sys, builtins
 
 
 
+# TODO Factor out.
+
 RESET       = '\x1B[0m'
 BOLD        = '\x1B[1m'
 UNDERLINE   = '\x1B[4m'
@@ -23,6 +25,8 @@ BG_CYAN     = '\x1B[46m'
 BG_WHITE    = '\x1B[47m'
 
 
+
+# TODO Maybe factor out.
 
 def did_you_mean(message, given, options):
 

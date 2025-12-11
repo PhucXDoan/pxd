@@ -58,12 +58,20 @@ class Interface:
     # Interfaces are where all verbs are
     # grouped together and are eventually invoked.
 
-    def __init__(self, *, name, description, logger):
+    def __init__(
+        self,
+        *,
+        name,
+        description,
+        logger,
+        hook = None,
+    ):
 
         self.name        = name
         self.description = description
         self.verbs       = []
         self.logger      = logger
+        self.hook        = hook
         self.new_verb(
             {
                 'name'        : ...,
@@ -691,6 +699,40 @@ class Interface:
 
 
 
+        # Begin the hook.
+
+        hook_iterator = None
+
+        if self.hook:
+
+            hook_iterator = self.hook(verb, parameters)
+
+            if not isinstance(hook_iterator, types.GeneratorType):
+                raise ValueError(f'Hook must be a generator.')
+
+            try:
+                next(hook_iterator)
+            except StopIteration as error:
+                raise RuntimeError(f'Hook did not yield.') from error
+
+
+
         # Finally execute the verb.
 
         verb.function(types.SimpleNamespace(**parameters))
+
+
+
+        # End the hook.
+
+        if self.hook:
+
+            stopped = False
+
+            try:
+                next(hook_iterator)
+            except StopIteration:
+                stopped = True
+
+            if not stopped:
+                raise RuntimeError('Hook did not return.')

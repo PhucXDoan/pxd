@@ -186,6 +186,17 @@ class Interface:
 
 
 
+                    # If the parameter is a list of options,
+                    # list them all out here.
+
+                    if isinstance(parameter_schema.type, list):
+
+                        for option in parameter_schema.type:
+
+                            output += f'            - {repr(option)}\n'
+
+
+
                     output += '\n'
 
 
@@ -595,6 +606,23 @@ class Interface:
                                 f'Parameter {parameter_schema.formatted_name} must be a boolean; '
                                 f'can be {repr(FALSY)} or {repr(TRUTHY)}.'
                             )
+
+                            sys.exit(1)
+
+
+
+                    # Pick from a list of options.
+
+                    case list():
+
+                        if value not in parameter_schema.type:
+
+                            self.logger.error(did_you_mean(
+                                f'Parameter {parameter_schema.formatted_name} '
+                                f'given invalid option of {{}}.',
+                                value,
+                                parameter_schema.type,
+                            ))
 
                             sys.exit(1)
 

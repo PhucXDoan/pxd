@@ -211,7 +211,7 @@ def some_verb_here(parameters):
     {
         'name'        : 'minuend',
         'description' : 'The value to be subtracted from.',
-        'type'        : int,
+        'type'        : ['meow', 'woof', 'bark'],
     },
     {
         'name'        : 'subtrahend',

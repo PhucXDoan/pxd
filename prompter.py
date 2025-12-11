@@ -60,12 +60,7 @@ class Interface:
         self.description = description
         self.verbs       = []
         self.logger      = logger
-
-
-
-        # Create the default help verb.
-
-        @self.new_verb(
+        self.new_verb(
             {
                 'name'        : ...,
                 'description' : f"Show usage of {repr(self.name)}; pass 'all' for all details."
@@ -76,133 +71,136 @@ class Interface:
                 'type'        : str,
                 'default'     : None,
             }
+        )(self.help)
+
+
+
+    # The default help verb.
+
+    def help(self, parameters):
+
+        output = ''
+
+
+
+        # Details of the interface itself.
+
+        output += f'> {UNDERLINE}{BOLD}{self.name} [verb] (parameters...){RESET}' '\n'
+        output += f'{self.description}'                                           '\n'
+        output += '\n'
+
+
+
+        # We want to show the `help` last so that
+        # it'll be the first thing the user sees
+        # if the list of verbs is very long.
+
+        shown_verbs = sorted(
+            [
+                verb
+                for verb in self.verbs
+                if parameters.verb_name in (verb.name, None, 'all')
+            ],
+            key = lambda verb: (verb.name == 'help')
         )
-        def help(parameters):
-
-            output = ''
 
 
 
-            # Details of the interface itself.
+        # If given a specific verb name as a parameter,
+        # make sure it actually exists.
 
-            output += f'> {UNDERLINE}{BOLD}{self.name} [verb] (parameters...){RESET}' '\n'
-            output += f'{self.description}'                                           '\n'
-            output += '\n'
+        if not shown_verbs and parameters.verb_name not in (None, 'all'):
 
+            self.logger.error(did_you_mean(
+                'No verb goes by the name of {}.',
+                parameters.verb_name,
+                [verb.name for verb in self.verbs],
+            ))
 
-
-            # We want to show the `help` last so that
-            # it'll be the first thing the user sees
-            # if the list of verbs is very long.
-
-            shown_verbs = sorted(
-                [
-                    verb
-                    for verb in self.verbs
-                    if parameters.verb_name in (verb.name, None, 'all')
-                ],
-                key = lambda verb: (verb.name == 'help')
-            )
+            sys.exit(1)
 
 
 
-            # If given a specific verb name as a parameter,
-            # make sure it actually exists.
+        # Details of each verb registered in the interface.
 
-            if not shown_verbs and parameters.verb_name not in (None, 'all'):
-
-                self.logger.error(did_you_mean(
-                    'No verb goes by the name of {}.',
-                    parameters.verb_name,
-                    [verb.name for verb in self.verbs],
-                ))
-
-                sys.exit(1)
+        for verb in shown_verbs:
 
 
 
-            # Details of each verb registered in the interface.
+            # Indicator to show that some verbs were filtered out.
 
-            for verb in shown_verbs:
+            verbs_were_filtered_out = parameters.verb_name not in (None, 'all')
 
-
-
-                # Indicator to show that some verbs were filtered out.
-
-                verbs_were_filtered_out = parameters.verb_name not in (None, 'all')
-
-                if verbs_were_filtered_out:
-                    output += '    ...' '\n'
-                    output += '\n'
-
-
-
-                # Verb name.
-
-                output += f'    > {UNDERLINE}{BOLD}{self.name} {FG_GREEN}{verb.name}{RESET}{UNDERLINE}{BOLD}'
-
-
-
-                # Verb parameters in the invocation.
-
-                for parameter_schema in verb.parameter_schemas:
-
-                    output += f' {parameter_schema.formatted_name}'
-
-                output += f'{RESET}' '\n'
-
-
-
-                # Verb description.
-
-                output += f'    {verb.description}' '\n'
+            if verbs_were_filtered_out:
+                output += '    ...' '\n'
                 output += '\n'
 
 
 
-                # Verb parameter descriptions.
+            # Verb name.
 
-                if parameters.verb_name is not None:
-
-                    for parameter_schema in verb.parameter_schemas:
-
-                        output += f'        {parameter_schema.formatted_name} {parameter_schema.description}' '\n'
+            output += f'    > {UNDERLINE}{BOLD}{self.name} {FG_GREEN}{verb.name}{RESET}{UNDERLINE}{BOLD}'
 
 
 
-                        # Show that the parameter is optional if applicable.
+            # Verb parameters in the invocation.
 
-                        if parameter_schema.has_default:
+            for parameter_schema in verb.parameter_schemas:
 
-                            match parameter_schema.default:
+                output += f' {parameter_schema.formatted_name}'
 
-                                case str() | int() | float() | bool():
-                                    default = repr(parameter_schema.default)
-
-                                case _: # Not easily representable.
-                                    default = '(optional)'
-
-                            output += f'        = {default}' '\n'
+            output += f'{RESET}' '\n'
 
 
 
-                        output += '\n'
+            # Verb description.
+
+            output += f'    {verb.description}' '\n'
+            output += '\n'
 
 
 
-                # Indicator to show that some verbs were filtered out.
+            # Verb parameter descriptions.
 
-                if verbs_were_filtered_out:
-                    output += '    ...' '\n'
+            if parameters.verb_name is not None:
+
+                for parameter_schema in verb.parameter_schemas:
+
+                    output += f'        {parameter_schema.formatted_name} {parameter_schema.description}' '\n'
+
+
+
+                    # Show that the parameter is optional if applicable.
+
+                    if parameter_schema.has_default:
+
+                        match parameter_schema.default:
+
+                            case str() | int() | float() | bool():
+                                default = repr(parameter_schema.default)
+
+                            case _: # Not easily representable.
+                                default = '(optional)'
+
+                        output += f'        = {default}' '\n'
+
+
+
                     output += '\n'
 
 
 
-            output = output.removesuffix('\n')
+            # Indicator to show that some verbs were filtered out.
 
-            self.logger.info(output)
+            if verbs_were_filtered_out:
+                output += '    ...' '\n'
+                output += '\n'
 
-        self.help = help
+
+
+        output = output.removesuffix('\n')
+
+        self.logger.info(output)
 
 
 

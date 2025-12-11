@@ -188,14 +188,13 @@ def some_verb_here(parameters):
     {
         'name'        : 'minuend',
         'description' : 'The value to be subtracted from.',
-        'type'        : bool,
+        'type'        : int,
         'default'     : False,
     },
     {
         'name'        : 'subtrahend',
         'description' : 'The value to subtracted by.',
-        'type'        : bool,
-        'flag_only'   : True,
+        'type'        : int,
     },
 )
 def some_verb_here(parameters):

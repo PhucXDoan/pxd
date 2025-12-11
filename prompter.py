@@ -1,4 +1,4 @@
-import types, difflib, sys
+import types, difflib, sys, builtins
 
 
 
@@ -297,10 +297,12 @@ class Interface:
                 parameter_schemas += [types.SimpleNamespace(
                     identifier_name = parameter_identifier_name,
                     formatted_name  = parameter_formatted_name,
+                    flag_name       = parameter_identifier_name.replace('_', '-'),
                     description     = parameter_description,
                     type            = parameter_type,
                     has_default     = parameter_has_default,
                     default         = parameter_default,
+                    flag_only       = parameter_flag_only,
                 )]
 
 
@@ -361,46 +363,258 @@ class Interface:
 
             sys.exit(1)
 
+        # Arguments can either be unnamed or be specified as flags.
 
-
-        # TODO.
-
-        parameters = {}
-
-
-
-        # TODO.
-
-        remaining_parameter_schemas = verb.parameter_schemas[:]
-
-        while remaining_parameter_schemas:
+        def flag_split(argument):
 
 
 
-            # Find an argument that could be matched up
-            # with the next parameter schema in line.
+            # Argument needs the flag prefix.
 
-            for argument_i, argument in enumerate(remaining_arguments):
-                break
+            if not argument.startswith('--'):
+                return (None, argument)
+
+
+
+            # The flag argument may have an
+            # assigned value associated with it.
+
+            flag_name, *flag_value = argument.removeprefix('--').split('=', 1)
+
+            if flag_value == []:
+                flag_value = None
             else:
-                break
+                flag_value, = flag_value
 
 
 
-            # TODO.
+            # The flag name must look like a proper name.
 
-            parameters[remaining_parameter_schemas[0].identifier_name] = remaining_arguments[argument_i]
+            if not flag_name.replace('-', '_').isidentifier():
+                return (None, argument)
+
+
+
+            return (flag_name, flag_value)
+
+
+
+        # Arguments that are given as flags are prioritized.
+
+        parameters                  = {}
+        remaining_parameter_schemas = verb.parameter_schemas[:]
+        remaining_arguments         = [flag_split(argument) for argument in remaining_arguments]
+
+        for flag_name, flag_value in remaining_arguments:
+
+            if flag_name is None:
+                continue
+
+
+
+            # Look for parameter of the same flag name.
+
+            for parameter_schema_i, parameter_schema in enumerate(verb.parameter_schemas):
+                if parameter_schema.flag_name == flag_name:
+                    break
+
+
+
+            # Couldn't find a parameter that match the flag argument.
+
+            else:
+
+                self.help(types.SimpleNamespace(
+                    verb_name = verb.name,
+                ))
+
+                self.logger.error(did_you_mean(
+                    'Unknown parameter flag {}.',
+                    flag_name,
+                    [
+                        parameter_schema.flag_name
+                        for parameter_schema in verb.parameter_schemas
+                    ],
+                ))
+
+                sys.exit(1)
+
+
+
+            # Ensure all flag arguments are unique.
+
+            if flag_name in parameters:
+
+                self.logger.error(
+                    f'Parameter {parameter_schema.formatted_name} already given.'
+                )
+
+                sys.exit(1)
+
+
+
+            # Only boolean flags can have unassigned values.
+
+            if flag_value is None:
+
+                if parameter_schema.type == bool:
+
+                    flag_value = 'true'
+
+                else:
+
+                    self.logger.error(
+                        f'Parameter {parameter_schema.formatted_name} '
+                        f'must be given a flag value.'
+                    )
+
+                    sys.exit(1)
+
+
+
+            # We've now processed the flag argument and parameter.
+
+            parameters[parameter_schema.identifier_name] = flag_value
+
+            del remaining_parameter_schemas[parameter_schema_i]
+
+
+
+        # Rest of the remaining arguments are unnamed.
+
+        remaining_arguments = [
+            flag_value
+            for flag_name, flag_value in remaining_arguments
+            if flag_name is None
+        ]
+
+
+
+        # Pair up the remaining parameters and arguments.
+
+        while remaining_parameter_schemas and remaining_arguments:
+
+
+
+            # Some parameters can only be provided as flags.
+
+            if remaining_parameter_schemas[0].flag_only:
+
+                self.logger.error(
+                    f'Parameter {remaining_parameter_schemas[0].formatted_name} '
+                    f'must be provided as a flag.'
+                )
+
+                sys.exit(1)
+
+
+
+            parameters[remaining_parameter_schemas[0].identifier_name] = remaining_arguments[0]
 
             del remaining_parameter_schemas[0]
-            del remaining_arguments[argument_i]
+            del remaining_arguments[0]
 
 
 
-        # TODO.
+        # There shouldn't be any leftover arguments.
 
-        for parameter_schema in remaining_parameter_schemas:
+        if remaining_arguments:
 
-            if parameter_schema.has_default:
+            self.help(types.SimpleNamespace(
+                verb_name = verb.name,
+            ))
+
+            self.logger.error(f'Extra argument {repr(remaining_arguments[0])}.')
+
+            sys.exit(1)
+
+
+
+        # Determine each parameter's final value.
+
+        for parameter_schema in verb.parameter_schemas:
+
+
+
+            # Parse the parameter value given by the user.
+
+            if parameter_schema.identifier_name in parameters:
+
+                value = parameters[parameter_schema.identifier_name]
+
+                match parameter_schema.type:
+
+
+
+                    # Strings stay as-is.
+
+                    case builtins.str:
+                        pass
+
+
+
+                    # Interpret as an integer.
+
+                    case builtins.int:
+
+                        try:
+
+                            value = int(value)
+
+                        except ValueError:
+
+                            self.help(types.SimpleNamespace(
+                                verb_name = verb.name,
+                            ))
+
+                            self.logger.error(
+                                f'Parameter {parameter_schema.formatted_name} must be an integer; '
+                                f'got {repr(value)}.'
+                            )
+
+                            sys.exit(1)
+
+
+
+                    # Interpret as a boolean.
+
+                    case builtins.bool:
+
+                        FALSY  = ('0', 'f', 'n', 'no' , 'false')
+                        TRUTHY = ('1', 't', 'y', 'yes', 'true' )
+
+                        if value in FALSY:
+                            value = False
+
+                        elif value in TRUTHY:
+                            value = True
+
+                        else:
+
+                            self.logger.error(
+                                f'Parameter {parameter_schema.formatted_name} must be a boolean; '
+                                f'can be {repr(FALSY)} or {repr(TRUTHY)}.'
+                            )
+
+                            sys.exit(1)
+
+
+
+                    # Unknown parameter type.
+
+                    case idk:
+                        raise TypeError(f'Unsupported parameter type: {repr(idk)}.')
+
+
+
+                parameters[parameter_schema.identifier_name] = value
+
+
+
+            # The user didn't provide this parameter,
+            # but at least there's a fallback value.
+
+            elif parameter_schema.has_default:
 
                 parameters[parameter_schema.identifier_name] = parameter_schema.default
 
@@ -420,18 +634,6 @@ class Interface:
 
 
 
-        # There shouldn't be any leftover arguments.
-
-        if remaining_arguments:
-
-            self.help(types.SimpleNamespace(
-                verb_name = verb.name,
-            ))
-
-            self.logger.error(f'Extra argument {repr(remaining_arguments[0])}.')
-
-            sys.exit(1)
-
-
+        # Finally execute the verb.
 
         verb.function(types.SimpleNamespace(**parameters))

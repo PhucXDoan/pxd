@@ -202,18 +202,20 @@ class Interface:
                             case _: # Not easily representable.
                                 default = '(optional)'
 
-                        output += f'        = {default}' '\n'
+                        output += f'            = {default}' '\n'
 
 
 
                     # If the parameter is a list of options,
                     # list them all out here.
 
-                    if isinstance(parameter_schema.type, list):
+                    match parameter_schema.type:
 
-                        for option in parameter_schema.type:
+                        case list() | tuple() | dict():
 
-                            output += f'            - {repr(option)}\n'
+                            for option in parameter_schema.type:
+
+                                output += f'            - {repr(option)}\n'
 
 
 
@@ -649,7 +651,7 @@ class Interface:
 
                     # Pick from a list of options.
 
-                    case list():
+                    case list() | tuple():
 
                         if value not in parameter_schema.type:
 
@@ -661,6 +663,21 @@ class Interface:
                             ))
 
                             sys.exit(1)
+
+                    case dict():
+
+                        if value not in parameter_schema.type:
+
+                            self.logger.error(did_you_mean(
+                                f'Parameter {parameter_schema.formatted_name} '
+                                f'given invalid option of {{}}.',
+                                value,
+                                parameter_schema.type.keys(),
+                            ))
+
+                            sys.exit(1)
+
+                        value = parameter_schema.type[value]
 
 
 

@@ -229,7 +229,7 @@ class Interface:
                 if verb.more_help:
 
                     output += '\n'.join(
-                        f'            {line}'
+                        f'        {line}'
                         for line in verb.function(None).splitlines()
                     ) + '\n'
 

@@ -1442,6 +1442,62 @@ def do(*,
 
 
 
+    ################################################################################
+    #
+    # Sort the meta-directives.
+    #
+
+
+
+    remaining_meta_directives  = meta_directives
+    meta_directives            = []
+    available_identifier_names = []
+
+    while remaining_meta_directives:
+
+        for meta_directive_i, meta_directive in enumerate(remaining_meta_directives):
+
+
+
+            # See if all of the meta-directive's dependencies are satisfied.
+
+            if not all(
+                identifier.name in available_identifier_names
+                for identifier in meta_directive.identifiers
+                if identifier.kind in ('import', 'implicit')
+            ):
+                continue
+
+
+
+            # All of the meta-directive's dependencies are satisfied,
+            # so it can be evaluated at this point and have all of its
+            # defined identifiers be added to the set.
+
+            available_identifier_names += [
+                identifier.name
+                for identifier in meta_directive.identifiers
+                if identifier.kind in ('export', 'global')
+            ]
+
+
+
+            # Acknowledge the meta-directive as processed.
+
+            meta_directives += [meta_directive]
+            del remaining_meta_directives[meta_directive_i]
+            break
+
+
+
+        # There's likely some sort of circular dependency.
+
+        else:
+
+            raise NotImplementedError
+
+
+
     ################################################################################################################################
     ################################################################################################################################
     ######################################################## End Work Zone #########################################################
@@ -1465,63 +1521,6 @@ def do(*,
         )
         for meta_directive in meta_directives
     ]
-
-
-
-    ################################################################################################################################
-    #
-    # Sort the meta-directives.
-    #
-
-    remaining_meta_directives = meta_directives
-    meta_directives           = []
-    available_symbols         = OrderedSet()
-
-    while remaining_meta_directives:
-
-        for meta_directive_i, meta_directive in enumerate(remaining_meta_directives):
-
-
-
-            # This meta-directive doesn't have
-            # all of its imports satisfied yet.
-
-            if not all(symbol in available_symbols for symbol in meta_directive.imports):
-                continue
-
-
-
-            # This meta-directive would be executed and define all
-            # of its exported symbols for later meta-directives to use.
-
-            available_symbols |= meta_directive.exports
-
-
-
-            # Remove from pool.
-
-            meta_directives += [meta_directive]
-            del remaining_meta_directives[meta_directive_i]
-
-            break
-
-
-
-        # Couldn't find the next meta-directive to execute.
-
-        else:
-            raise MetaError(
-                [
-                    types.SimpleNamespace(
-                        file_path     = meta_directive.source_file_path,
-                        line_number   = meta_directive.meta_header_line_number,
-                        function_name = None,
-                    )
-                    for meta_directive in remaining_meta_directives
-                    if meta_directive.explicit_imports
-                ],
-                RuntimeError(f'Meta-directives with circular dependency.')
-            )
 
 
 

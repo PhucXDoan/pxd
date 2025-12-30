@@ -1382,6 +1382,66 @@ def do(*,
 
 
 
+    ################################################################################
+    #
+    # Meta-directives with a bare header will implicitly import everything.
+    #
+
+
+
+    for meta_directive in meta_directives:
+
+        if any(
+            identifier.kind in ('export', 'import', 'global')
+            for identifier in meta_directive.identifiers
+        ):
+            continue
+
+        meta_directive.identifiers += [
+            types.SimpleNamespace(
+                kind = 'implicit',
+                name = name,
+            )
+            for name in all_defined_identifier_names
+            if name not in (identifier.name for identifier in meta_directive.identifiers)
+        ]
+
+
+
+    ################################################################################
+    #
+    # Meta-directives with global identifiers will have those identifiers be
+    # implicitly imported into every other meta-directive without a global list.
+    #
+
+
+
+    all_global_identifier_names = [
+        identifier.name
+        for meta_directive in meta_directives
+        for identifier     in meta_directive.identifiers
+        if identifier.kind == 'global'
+    ]
+
+    for meta_directive in meta_directives:
+
+        if any(
+            identifier.kind == 'global'
+            for identifier in meta_directive.identifiers
+        ):
+            continue
+
+        meta_directive.identifiers += [
+            types.SimpleNamespace(
+                kind = 'implicit',
+                name = name,
+            )
+            for name in all_global_identifier_names
+            if name not in (identifier.name for identifier in meta_directive.identifiers)
+        ]
+
+
+
     ################################################################################################################################
     ################################################################################################################################
     ######################################################## End Work Zone #########################################################
@@ -1397,7 +1457,7 @@ def do(*,
             include_directive_file_path   = output_directory_path / meta_directive.include_file_path if meta_directive.include_file_path else None,
             include_directive_line_number = meta_directive.include_line_number,
             exports                       = OrderedSet([identifier.name for identifier in meta_directive.identifiers if identifier.kind in ('export', 'global')]),
-            imports                       = OrderedSet([identifier.name for identifier in meta_directive.identifiers if identifier.kind == 'import']),
+            imports                       = OrderedSet([identifier.name for identifier in meta_directive.identifiers if identifier.kind in ('import', 'implicit')]),
             explicit_imports              = OrderedSet([identifier.name for identifier in meta_directive.identifiers if identifier.kind == 'import']),
             global_exporter               = any(identifier.kind == 'global' for identifier in meta_directive.identifiers),
             body_lines                    = meta_directive.body_lines,
@@ -1405,58 +1465,6 @@ def do(*,
         )
         for meta_directive in meta_directives
     ]
-
-
-
-    ################################################################################################################################
-    #
-    # Perform implicit importings.
-    # >
-    # >    #meta                     -> No exports; import everything.
-    # >    #meta A, B, C             -> Export A, B, and C; no explicit imports.
-    # >    #meta A, B, C :           -> Export A, B, and C and have every other meta-directive implicitly globally import A, B, C.
-    # >    #meta A, B, C : D, E, F   -> Export A, B, and C; explicitly import D, E, and F.
-    # >    #meta         : D, E, F   -> Export nothing; explicitly import D, E, and F.
-    # >    #meta         :           -> No exports; no imports at all.
-    # >
-    #
-
-
-
-    # If it's just a bare meta-header,
-    # then the meta-directive implicitly
-    # imports everything.
-
-    all_exports = OrderedSet(
-        export
-        for meta_directive in meta_directives
-        for export         in meta_directive.exports
-    )
-
-    for meta_directive in meta_directives:
-        if not (
-            meta_directive.exports
-            or meta_directive.imports
-            or meta_directive.global_exporter
-        ):
-            meta_directive.imports = all_exports
-
-
-
-    # If the meta-directive explicitly imports
-    # nothing, then its exports will globally be
-    # implicitly imported into every other meta-directive.
-
-    implicit_global_import = OrderedSet(
-        symbol
-        for meta_directive in meta_directives
-        if meta_directive.global_exporter
-        for symbol in meta_directive.exports
-    )
-
-    for meta_directive in meta_directives:
-        if not meta_directive.global_exporter:
-            meta_directive.imports |= implicit_global_import
 
 
 

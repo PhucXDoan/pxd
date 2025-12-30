@@ -1125,291 +1125,194 @@ def do(*,
 
 
     ################################################################################################################################
-    #
-    # Routine to parse the C preprocessor's include-directive.
-    #
-
-    def get_include_directive_file_path(line):
-
-
-
-        # It's fine if the line is commented;
-        # this would mean that the meta-directive
-        # would still generate code, but where the
-        # meta-directive is isn't where the code
-        # would be inserted at right now.
-        # e.g:
-        # >
-        # >    // #include "output.meta"
-        # >    /* #meta
-        # >        ...
-        # >    */
-        # >
-
-        line = line.strip()
-
-        if   line.startswith('//'): line = line.removeprefix('//')
-        elif line.startswith('/*'): line = line.removeprefix('/*')
-
-
-
-        # Check if the line has an include directive.
-
-        line = line.strip()
-
-        if not line.startswith(prefix := '#'):
-            return None
-
-        line = line.removeprefix(prefix)
-
-        line = line.strip()
-
-        if not line.startswith(prefix := 'include'):
-            return None
-
-        line = line.removeprefix(prefix)
-
-
-
-        # Look for the file path.
-
-        line = line.strip()
-
-        end_quote = {
-            '<' : '>',
-            '"' : '"',
-        }.get(line[0], None) if line else None
-
-        if end_quote is None:
-            return None
-
-        length = line[1:].find(end_quote)
-
-        if length == -1:
-            return None
-
-        return pathlib.Path(output_directory_path, line[1:][:length])
-
-
-
     ################################################################################################################################
-    #
-    # Get all of the meta-directives.
-    #
+    ####################################################### Start Work Zone ########################################################
+    ################################################################################################################################
+    ################################################################################################################################
+
+
 
     meta_directives = []
 
     for source_file_path in source_file_paths:
 
-        remaining_lines       = source_file_path.read_text().splitlines()
-        remaining_line_number = 1
+        remaining_lines = source_file_path.read_text().splitlines()
+        total_lines     = len(remaining_lines)
 
-        while True:
+        while remaining_lines:
+
+            meta_directive = types.SimpleNamespace(
+                source_file_path    = source_file_path,
+                include_file_path   = None,
+                include_line_number = None,
+                identifiers         = {
+                    'export' : [],
+                    'import' : [],
+                    'global' : [],
+                },
+                body_line_number = None,
+                body_lines       = [],
+            )
 
 
 
-            # Check if the current line is an include-directive.
+            # Parse for any include-directives that may prepend a meta-directive.
 
-            if not remaining_lines:
-                break
+            while remaining_lines:
 
-            include_directive_file_path = get_include_directive_file_path(remaining_lines[0])
+                include_match = (
+                    re.match(r'\s*#\s*include\s*"(.*)"', remaining_lines[0]) or
+                    re.match(r'\s*#\s*include\s*<(.*)>', remaining_lines[0])
+                )
 
-            if include_directive_file_path is None:
+                if not include_match:
+                    break
 
-                include_directive_line_number = None
+                _, *remaining_lines = remaining_lines
+
+                meta_directive.include_file_path   = pathlib.Path(include_match.groups()[0])
+                meta_directive.include_line_number = total_lines - len(remaining_lines)
+
+
+
+            # Try parsing for a meta-directive.
+
+            meta_directive_found = False
+
+            while remaining_lines:
+
+
+
+                # Pop the next line.
+
+                current_line, *remaining_lines = remaining_lines
+
+
+
+                # See if the line is part of a meta-directive's header.
+
+                meta_match = re.match(
+                    r'\s*#\s*meta\b\s*(.*)' if source_file_path.suffix == '.py' else
+                    r'\s*/\*\s*#\s*meta\b\s*(.*)',
+                    current_line
+                )
+
+                if not meta_match:
+                    break
+
+                meta_directive_found = True
+
+
+
+                # Parse the meta-directive's header line.
+
+                specifier   = ...
+                identifiers = ...
+
+                match meta_match.groups()[0].strip().split(maxsplit = 1):
+
+
+
+                    # Meta-directive header line with a list of identifiers.
+
+                    case [specifier, identifiers] if specifier in meta_directive.identifiers:
+
+                        identifiers = [
+                            types.SimpleNamespace(
+                                name        = identifier.strip(),
+                                line_number = total_lines - len(remaining_lines),
+                            )
+                            for identifier in identifiers.split(',')
+                        ]
+
+                        if bad := next((
+                            identifier
+                            for identifier in identifiers
+                            if not identifier.name.isidentifier()
+                        ), None):
+                            raise NotImplementedError
+
+                        meta_directive.identifiers[specifier] += identifiers
+
+
+
+                    # Empty meta-directive header line;
+                    # typically to just denote the start of a meta-directive.
+
+                    case []:
+                        specifier   = None
+                        identifiers = []
+
+
+
+                    case _:
+                        raise NotImplementedError
+
+
+
+            if not meta_directive_found:
+                continue
+
+
+
+            # We now get the body of the meta-directive.
+
+            meta_directive.body_line_number = total_lines - len(remaining_lines)
+            meta_directive.body_lines       = []
+
+            if source_file_path.suffix == '.py':
+
+                meta_directive.body_lines = remaining_lines
+                remaining_lines           = []
 
             else:
 
-                include_directive_line_number  = remaining_line_number
-                remaining_lines                = remaining_lines[1:]
-                remaining_line_number         += 1
+                while True:
 
+                    if not remaining_lines:
+                        raise NotImplementedError
 
+                    body_line, *remaining_lines = remaining_lines
 
-            # We'll be now checking if the current line is a meta-header.
+                    ending = '*/' in body_line
 
-            if not remaining_lines:
-                break
+                    if ending:
+                        body_line = body_line[:body_line.index('*/')]
 
-            meta_header_line         = remaining_lines[0]
-            meta_header_line_number  = remaining_line_number
-            remaining_lines          = remaining_lines[1:]
-            remaining_line_number   += 1
+                    meta_directive.body_lines += [body_line]
 
+                    if ending:
+                        break
 
 
-            # Only in Python files that meta-headers are not prefixed with `/*`.
 
-            if source_file_path.suffix != '.py':
+            meta_directives += [meta_directive]
 
-                meta_header_line = meta_header_line.strip()
 
-                if not meta_header_line.startswith(prefix := '/*'):
-                    continue
 
-                meta_header_line = meta_header_line.removeprefix(prefix)
+    ################################################################################################################################
+    ################################################################################################################################
+    ######################################################## End Work Zone #########################################################
+    ################################################################################################################################
+    ################################################################################################################################
 
 
 
-            # Check for the meta-header tag.
-
-            meta_header_line = meta_header_line.strip()
-
-            if not meta_header_line.startswith(prefix := '#meta'):
-
-                if not meta_header_line.startswith('#') and source_file_path.suffix == '.py':
-
-                    # Python files that are meta-directives
-                    # should have the meta-header at the top.
-                    break
-
-                else:
-
-                    continue
-
-            meta_header_line = meta_header_line.removeprefix(prefix)
-
-
-
-            # We then parse and validate the meta-header.
-
-            match meta_header_line.split(':'):
-
-                case [exports]:
-                    ports            = [exports, '']
-                    has_import_field = False
-
-                case [exports, imports]:
-                    ports            = [exports, imports]
-                    has_import_field = True
-
-                case _: assert False
-
-
-
-            # Process the LHS and RHS.
-
-            for port_i, port in enumerate(ports):
-
-                symbols = []
-
-                for symbol in port.split(','):
-
-                    symbol = symbol.strip()
-
-                    if symbol == '':
-                        continue # We're fine with extra commas.
-
-                    if not symbol.isidentifier():
-                        raise MetaError(
-                            [
-                                types.SimpleNamespace(
-                                    file_path     = source_file_path,
-                                    line_number   = meta_header_line_number,
-                                    function_name = None,
-                                ),
-                            ],
-                            SyntaxError(
-                                f'The symbol {repr(symbol)} doesn\'t '
-                                f'look like an identifier.'
-                            )
-                        )
-
-                    symbols += [symbol]
-
-
-
-                # We're find with duplicate symbols;
-                # doesn't really affect anything besides being redundant.
-
-                ports[port_i] = OrderedSet(symbols)
-
-
-
-            exports, imports = ports
-
-
-
-            # Get the lines of the meta-directive.
-
-            body_lines = []
-
-            match source_file_path.suffix:
-
-
-                # Python files are interpreted as the entire meta-directive.
-
-                case '.py':
-
-                    body_lines             = remaining_lines
-                    remaining_line_number += len(remaining_lines)
-                    remaining_lines        = []
-
-
-
-                # The end of the meta-directive is denoted by `*/`.
-
-                case _:
-
-                    ending = -1
-
-                    while ending == -1:
-
-
-
-                        # Get next line of the body.
-
-                        if not remaining_lines:
-                            raise MetaError(
-                                [
-                                    types.SimpleNamespace(
-                                        file_path     = source_file_path,
-                                        line_number   = meta_header_line_number,
-                                        function_name = None,
-                                    )
-                                ],
-                                SyntaxError(
-                                    f"Couldn't find the terminating '*/'."
-                                )
-                            )
-
-                        body_line              = remaining_lines[0]
-                        remaining_lines        = remaining_lines[1:]
-                        remaining_line_number += 1
-
-
-
-                        # Check if we have found the ending.
-
-                        ending = body_line.find('*/')
-
-                        if ending != -1:
-                            body_line = body_line[:ending]
-
-
-
-                        # Append.
-
-                        body_line   = body_line.rstrip()
-                        body_lines += [body_line]
-
-
-
-            # Finished processing this meta-directive.
-
-            meta_directives += [types.SimpleNamespace(
-                source_file_path              = source_file_path,
-                meta_header_line_number       = meta_header_line_number,
-                include_directive_file_path   = include_directive_file_path,
-                include_directive_line_number = include_directive_line_number,
-                exports                       = exports,
-                imports                       = imports,
-                explicit_imports              = imports,
-                global_exporter               = has_import_field and not imports,
-                body_lines                    = body_lines,
-                bytecode_name                 = None,
-            )]
+    meta_directives = [
+        types.SimpleNamespace(
+            source_file_path              = meta_directive.source_file_path,
+            meta_header_line_number       = 0, # TODO
+            include_directive_file_path   = output_directory_path / meta_directive.include_file_path if meta_directive.include_file_path else None,
+            include_directive_line_number = meta_directive.include_line_number,
+            exports                       = OrderedSet([identifier.name for identifier in meta_directive.identifiers['export'] + meta_directive.identifiers['global']]),
+            imports                       = OrderedSet([identifier.name for identifier in meta_directive.identifiers['import']]),
+            explicit_imports              = OrderedSet([identifier.name for identifier in meta_directive.identifiers['import']]),
+            global_exporter               = bool(meta_directive.identifiers['global']),
+            body_lines                    = meta_directive.body_lines,
+            bytecode_name                 = None,
+        )
+        for meta_directive in meta_directives
+    ]
 
 
 

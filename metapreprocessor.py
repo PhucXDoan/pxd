@@ -1152,13 +1152,9 @@ def do(*,
                 source_file_path    = source_file_path,
                 include_file_path   = None,
                 include_line_number = None,
-                identifiers         = {
-                    'export' : [],
-                    'import' : [],
-                    'global' : [],
-                },
-                body_line_number = None,
-                body_lines       = [],
+                identifiers         = [],
+                body_line_number    = None,
+                body_lines          = [],
             )
 
 
@@ -1213,16 +1209,13 @@ def do(*,
 
                 # Parse the meta-directive's header line.
 
-                specifier   = ...
-                identifiers = ...
-
                 match meta_match.groups()[0].strip().split(maxsplit = 1):
 
 
 
                     # Meta-directive header line with a list of identifiers.
 
-                    case [specifier, *identifiers] if specifier in meta_directive.identifiers:
+                    case [kind, *identifiers] if kind in ('export', 'import', 'global'):
 
                         if not identifiers:
                             raise NotImplementedError
@@ -1230,6 +1223,7 @@ def do(*,
                         identifiers, = identifiers
                         identifiers  = [
                             types.SimpleNamespace(
+                                kind        = kind,
                                 name        = identifier.strip(),
                                 line_number = total_lines - len(remaining_lines),
                             )
@@ -1250,7 +1244,7 @@ def do(*,
 
 
 
-                        meta_directive.identifiers[specifier] += identifiers
+                        meta_directive.identifiers += identifiers
 
 
 
@@ -1258,8 +1252,7 @@ def do(*,
                     # typically to just denote the start of a meta-directive.
 
                     case []:
-                        specifier   = None
-                        identifiers = []
+                        pass
 
 
 
@@ -1308,26 +1301,13 @@ def do(*,
 
             for name, conflicts in coalesce(
                 (identifier.name, identifier)
-                for identifiers in meta_directive.identifiers.values()
-                for identifier in identifiers
+                for identifier in meta_directive.identifiers
             ):
 
                 if len(conflicts) <= 1:
                     continue
 
                 raise NotImplementedError
-
-
-
-            # Ensure the meta-directive doesn't import from itself.
-
-            for identifier in meta_directive.identifiers['import']:
-
-                if (
-                    identifier in meta_directive.identifiers['export'] or
-                    identifier in meta_directive.identifiers['global']
-                ):
-                    raise NotImplementedError
 
 
 
@@ -1365,10 +1345,8 @@ def do(*,
     for name, conflicts in coalesce(
         (identifier.name, meta_directive)
         for meta_directive in meta_directives
-        for identifier     in (
-            *meta_directive.identifiers['export'],
-            *meta_directive.identifiers['global'],
-        )
+        for identifier     in meta_directive.identifiers
+        if identifier.kind in ('export', 'global')
     ):
 
         if len(conflicts) <= 1:
@@ -1388,17 +1366,18 @@ def do(*,
     all_defined_identifier_names = [
         identifier.name
         for meta_directive in meta_directives
-        for identifier     in (
-            *meta_directive.identifiers['export'],
-            *meta_directive.identifiers['global'],
-        )
+        for identifier     in meta_directive.identifiers
+        if identifier.kind in ('export', 'global')
     ]
 
     for meta_directive in meta_directives:
 
-        for identifier in meta_directive.identifiers['import']:
+        for identifier in meta_directive.identifiers:
 
-            if identifier.name not in all_defined_identifier_names:
+            if (
+                identifier.kind == 'import' and
+                identifier.name not in all_defined_identifier_names
+            ):
                 raise NotImplementedError
 
 
@@ -1417,10 +1396,10 @@ def do(*,
             meta_header_line_number       = 0, # TODO
             include_directive_file_path   = output_directory_path / meta_directive.include_file_path if meta_directive.include_file_path else None,
             include_directive_line_number = meta_directive.include_line_number,
-            exports                       = OrderedSet([identifier.name for identifier in meta_directive.identifiers['export'] + meta_directive.identifiers['global']]),
-            imports                       = OrderedSet([identifier.name for identifier in meta_directive.identifiers['import']]),
-            explicit_imports              = OrderedSet([identifier.name for identifier in meta_directive.identifiers['import']]),
-            global_exporter               = bool(meta_directive.identifiers['global']),
+            exports                       = OrderedSet([identifier.name for identifier in meta_directive.identifiers if identifier.kind in ('export', 'global')]),
+            imports                       = OrderedSet([identifier.name for identifier in meta_directive.identifiers if identifier.kind == 'import']),
+            explicit_imports              = OrderedSet([identifier.name for identifier in meta_directive.identifiers if identifier.kind == 'import']),
+            global_exporter               = any(identifier.kind == 'global' for identifier in meta_directive.identifiers),
             body_lines                    = meta_directive.body_lines,
             bytecode_name                 = None,
         )

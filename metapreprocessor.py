@@ -1,4 +1,4 @@
-import pathlib, types, contextlib, re, traceback, sys, copy, string
+import pathlib, types, contextlib, re, traceback, sys, copy, string, collections
 from ..pxd.log   import log, ANSI, Indent
 from ..pxd.utils import justify, deindent, c_repr, find_dupe, coalesce, OrderedSet
 
@@ -1132,6 +1132,13 @@ def do(*,
 
 
 
+    ################################################################################
+    #
+    # Find all meta-directives.
+    #
+
+
+
     meta_directives = []
 
     for source_file_path in source_file_paths:
@@ -1215,15 +1222,24 @@ def do(*,
 
                     # Meta-directive header line with a list of identifiers.
 
-                    case [specifier, identifiers] if specifier in meta_directive.identifiers:
+                    case [specifier, *identifiers] if specifier in meta_directive.identifiers:
 
-                        identifiers = [
+                        if not identifiers:
+                            raise NotImplementedError
+
+                        identifiers, = identifiers
+                        identifiers  = [
                             types.SimpleNamespace(
                                 name        = identifier.strip(),
                                 line_number = total_lines - len(remaining_lines),
                             )
                             for identifier in identifiers.split(',')
+                            if identifier.strip()
                         ]
+
+
+
+                        # Ensure each identifier look like an actual identifier.
 
                         if bad := next((
                             identifier
@@ -1231,6 +1247,8 @@ def do(*,
                             if not identifier.name.isidentifier()
                         ), None):
                             raise NotImplementedError
+
+
 
                         meta_directive.identifiers[specifier] += identifiers
 
@@ -1286,7 +1304,102 @@ def do(*,
 
 
 
+            # Ensure all identifiers listed are unique.
+
+            for name, conflicts in coalesce(
+                (identifier.name, identifier)
+                for identifiers in meta_directive.identifiers.values()
+                for identifier in identifiers
+            ):
+
+                if len(conflicts) <= 1:
+                    continue
+
+                raise NotImplementedError
+
+
+
+            # Ensure the meta-directive doesn't import from itself.
+
+            for identifier in meta_directive.identifiers['import']:
+
+                if (
+                    identifier in meta_directive.identifiers['export'] or
+                    identifier in meta_directive.identifiers['global']
+                ):
+                    raise NotImplementedError
+
+
+
             meta_directives += [meta_directive]
+
+
+
+    ################################################################################
+    #
+    # Ensure each meta-directive's include file path is unique.
+    #
+
+
+
+    for include_file_path, conflicts in coalesce(
+        (meta_directive.include_file_path, meta_directive)
+        for meta_directive in meta_directives
+        if meta_directive.include_file_path is not None
+    ):
+
+        if len(conflicts) <= 1:
+            continue
+
+        raise NotImplementedError
+
+
+
+    ################################################################################
+    #
+    # Ensure each meta-directive's exported and global identifiers are unique.
+    #
+
+
+
+    for name, conflicts in coalesce(
+        (identifier.name, meta_directive)
+        for meta_directive in meta_directives
+        for identifier     in (
+            *meta_directive.identifiers['export'],
+            *meta_directive.identifiers['global'],
+        )
+    ):
+
+        if len(conflicts) <= 1:
+            continue
+
+        raise NotImplementedError
+
+
+
+    ################################################################################
+    #
+    # Ensure each meta-directive import from an actual existing identifier.
+    #
+
+
+
+    all_defined_identifier_names = [
+        identifier.name
+        for meta_directive in meta_directives
+        for identifier     in (
+            *meta_directive.identifiers['export'],
+            *meta_directive.identifiers['global'],
+        )
+    ]
+
+    for meta_directive in meta_directives:
+
+        for identifier in meta_directive.identifiers['import']:
+
+            if identifier.name not in all_defined_identifier_names:
+                raise NotImplementedError
 
 
 
@@ -1318,95 +1431,6 @@ def do(*,
 
     ################################################################################################################################
     #
-    # Check consistency of exports and imports.
-    #
-
-
-
-    for include_directive_file_path, meta_directives_of_include_directive_file_path in coalesce(
-        (meta_directive.include_directive_file_path, meta_directive)
-        for meta_directive in meta_directives
-        if meta_directive.include_directive_file_path is not None
-    ):
-        if len(meta_directives_of_include_directive_file_path) >= 2:
-            raise MetaError(
-                [
-                    types.SimpleNamespace(
-                        file_path     = meta_directive.source_file_path,
-                        line_number   = meta_directive.include_directive_line_number,
-                        function_name = None,
-                    )
-                    for meta_directive in meta_directives_of_include_directive_file_path
-                ],
-                RuntimeError(
-                    f'Meta-directives with the same output '
-                    f'file path: "{include_directive_file_path}".'
-                )
-            )
-
-
-
-    for symbol, meta_directives_of_symbol in coalesce(
-        (symbol, meta_directive)
-        for meta_directive in meta_directives
-        for symbol in meta_directive.exports
-    ):
-        if len(meta_directives_of_symbol) >= 2:
-            raise MetaError(
-                [
-                    types.SimpleNamespace(
-                        file_path     = meta_directive.source_file_path,
-                        line_number   = meta_directive.meta_header_line_number,
-                        function_name = None,
-                    )
-                    for meta_directive in meta_directives_of_symbol
-                ],
-                RuntimeError(f'Multiple meta-directives export the symbol "{symbol}".')
-            )
-
-
-
-    all_exports = OrderedSet(
-        export
-        for meta_directive in meta_directives
-        for export         in meta_directive.exports
-    )
-
-    for meta_directive in meta_directives:
-
-        for symbol in meta_directive.imports:
-
-            if symbol in meta_directive.exports:
-                raise MetaError(
-                    [
-                        types.SimpleNamespace(
-                            file_path     = meta_directive.source_file_path,
-                            line_number   = meta_directive.meta_header_line_number,
-                            function_name = None,
-                        ),
-                    ],
-                    RuntimeError(f'Meta-directives exports "{symbol}" but also imports it.')
-                )
-
-            if symbol not in all_exports:
-                raise MetaError(
-                    [
-                        types.SimpleNamespace(
-                            file_path     = meta_directive.source_file_path,
-                            line_number   = meta_directive.meta_header_line_number,
-                            function_name = None,
-                        ),
-                    ],
-                    RuntimeError(
-                        f'Meta-directives imports "{symbol}" '
-                        f'but no meta-directive exports that.'
-                    )
-                )
-
-
-
-    ################################################################################################################################
-    #
     # Perform implicit importings.
     # >
     # >    #meta                     -> No exports; import everything.
@@ -1423,6 +1447,12 @@ def do(*,
     # If it's just a bare meta-header,
     # then the meta-directive implicitly
     # imports everything.
+
+    all_exports = OrderedSet(
+        export
+        for meta_directive in meta_directives
+        for export         in meta_directive.exports
+    )
 
     for meta_directive in meta_directives:
         if not (

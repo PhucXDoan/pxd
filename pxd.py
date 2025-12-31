@@ -113,6 +113,35 @@ def justify(rows):
 
 ################################################################################
 #
+# ANSI graphics constants.
+#
+
+
+
+ANSI_RESET       = '\x1B[0m'
+ANSI_BOLD        = '\x1B[1m'
+ANSI_UNDERLINE   = '\x1B[4m'
+ANSI_FG_BLACK    = '\x1B[30m'
+ANSI_FG_RED      = '\x1B[31m'
+ANSI_FG_GREEN    = '\x1B[32m'
+ANSI_FG_YELLOW   = '\x1B[33m'
+ANSI_FG_BLUE     = '\x1B[34m'
+ANSI_FG_MAGENTA  = '\x1B[35m'
+ANSI_FG_CYAN     = '\x1B[36m'
+ANSI_FG_WHITE    = '\x1B[37m'
+ANSI_BG_BLACK    = '\x1B[40m'
+ANSI_BG_RED      = '\x1B[41m'
+ANSI_BG_GREEN    = '\x1B[42m'
+ANSI_BG_YELLOW   = '\x1B[43m'
+ANSI_BG_BLUE     = '\x1B[44m'
+ANSI_BG_MAGENTA  = '\x1B[45m'
+ANSI_BG_CYAN     = '\x1B[46m'
+ANSI_BG_WHITE    = '\x1B[47m'
+
+
+
+################################################################################
+#
 # Logger configuration.
 #
 
@@ -168,16 +197,14 @@ class MainFormatter(logging.Formatter):
             # Prepend the log level name and color based on severity.
 
             coloring = {
-                'DEBUG'    : '\x1B[0;35m',
-                'INFO'     : '\x1B[0;36m',
-                'WARNING'  : '\x1B[0;33m',
-                'ERROR'    : '\x1B[0;31m',
-                'CRITICAL' : '\x1B[1;31m',
+                'DEBUG'    : ANSI_FG_MAGENTA,
+                'INFO'     : ANSI_FG_CYAN,
+                'WARNING'  : ANSI_FG_YELLOW,
+                'ERROR'    : ANSI_FG_RED,
+                'CRITICAL' : ANSI_FG_RED + ANSI_BOLD,
             }[record.levelname]
 
-            reset = '\x1B[0m'
-
-            message = f'{coloring}[{record.levelname}]{reset} {message}'
+            message = f'{ANSI_RESET}{coloring}[{record.levelname}]{ANSI_RESET} {message}'
 
 
 
@@ -214,35 +241,6 @@ def make_main_relative_path(*parts):
             .joinpath(*parts)
             .relative_to(pathlib.Path.cwd(), walk_up = True)
     )
-
-
-
-################################################################################
-#
-# ANSI graphics constants.
-#
-
-
-
-ANSI_RESET       = '\x1B[0m'
-ANSI_BOLD        = '\x1B[1m'
-ANSI_UNDERLINE   = '\x1B[4m'
-ANSI_FG_BLACK    = '\x1B[30m'
-ANSI_FG_RED      = '\x1B[31m'
-ANSI_FG_GREEN    = '\x1B[32m'
-ANSI_FG_YELLOW   = '\x1B[33m'
-ANSI_FG_BLUE     = '\x1B[34m'
-ANSI_FG_MAGENTA  = '\x1B[35m'
-ANSI_FG_CYAN     = '\x1B[36m'
-ANSI_FG_WHITE    = '\x1B[37m'
-ANSI_BG_BLACK    = '\x1B[40m'
-ANSI_BG_RED      = '\x1B[41m'
-ANSI_BG_GREEN    = '\x1B[42m'
-ANSI_BG_YELLOW   = '\x1B[43m'
-ANSI_BG_BLUE     = '\x1B[44m'
-ANSI_BG_MAGENTA  = '\x1B[45m'
-ANSI_BG_CYAN     = '\x1B[46m'
-ANSI_BG_WHITE    = '\x1B[47m'
 
 
 

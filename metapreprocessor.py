@@ -1,4 +1,4 @@
-import pathlib, types, contextlib, re, traceback, sys, copy, string, collections
+import pathlib, types, contextlib, re, traceback, sys, copy, string, collections, importlib, textwrap
 from ..pxd.log   import log, ANSI, Indent
 from ..pxd.utils import justify, deindent, c_repr, find_dupe, coalesce, OrderedSet
 
@@ -198,7 +198,7 @@ class __META__:
 
         def wrapper(self, *args, **kwargs):
 
-            if self.meta_directive.include_directive_file_path is None:
+            if self.meta_directive.include_file_path is None:
                 raise RuntimeError(
                     f'Using `Meta` to generate code is only allowed '
                     f'when the meta-directives has an include-directive.'
@@ -221,7 +221,7 @@ class __META__:
 
         # No generated code if there's no #include directive.
 
-        if self.meta_directive.include_directive_file_path is None:
+        if self.meta_directive.include_file_path is None:
             return
 
 
@@ -237,7 +237,7 @@ class __META__:
 
         # TODO Have as an option?
         # self.line(f'''
-        #     // [{self.meta_directive.source_file_path.as_posix()}:{self.meta_directive.include_directive_line_number}].
+        #     // [{self.meta_directive.source_file_path.as_posix()}:{self.meta_directive.include_line_number}].
         # ''')
 
 
@@ -299,8 +299,8 @@ class __META__:
 
         # Spit out the generated code.
 
-        pathlib.Path(self.meta_directive.include_directive_file_path).parent.mkdir(parents = True, exist_ok = True)
-        pathlib.Path(self.meta_directive.include_directive_file_path).write_text(self.output)
+        pathlib.Path(self.meta_directive.include_file_path).parent.mkdir(parents = True, exist_ok = True)
+        pathlib.Path(self.meta_directive.include_file_path).write_text(self.output)
 
 
 
@@ -1124,14 +1124,6 @@ def do(*,
 
 
 
-    ################################################################################################################################
-    ################################################################################################################################
-    ####################################################### Start Work Zone ########################################################
-    ################################################################################################################################
-    ################################################################################################################################
-
-
-
     ################################################################################
     #
     # Find all meta-directives.
@@ -1173,7 +1165,7 @@ def do(*,
 
                 _, *remaining_lines = remaining_lines
 
-                meta_directive.include_file_path   = pathlib.Path(include_match.groups()[0])
+                meta_directive.include_file_path   = pathlib.Path(output_directory_path, include_match.groups()[0])
                 meta_directive.include_line_number = total_lines - len(remaining_lines)
 
 
@@ -1294,6 +1286,12 @@ def do(*,
 
                     if ending:
                         break
+
+                meta_directive.body_lines = deindent(
+                    '\n'.join(meta_directive.body_lines),
+                    multilined_string_literal = False,
+                    single_line_comment       = '#'
+                ).splitlines()
 
 
 
@@ -1498,155 +1496,148 @@ def do(*,
 
 
 
-    ################################################################################################################################
-    ################################################################################################################################
-    ######################################################## End Work Zone #########################################################
-    ################################################################################################################################
-    ################################################################################################################################
+    ################################################################################
+    #
+    # Create the top-level main function that'll
+    # evaluate all of the meta-directives.
+    #
 
 
 
-    meta_directives = [
-        types.SimpleNamespace(
-            source_file_path              = meta_directive.source_file_path,
-            meta_header_line_number       = 0, # TODO
-            include_directive_file_path   = output_directory_path / meta_directive.include_file_path if meta_directive.include_file_path else None,
-            include_directive_line_number = meta_directive.include_line_number,
-            exports                       = OrderedSet([identifier.name for identifier in meta_directive.identifiers if identifier.kind in ('export', 'global')]),
-            imports                       = OrderedSet([identifier.name for identifier in meta_directive.identifiers if identifier.kind in ('import', 'implicit')]),
-            explicit_imports              = OrderedSet([identifier.name for identifier in meta_directive.identifiers if identifier.kind == 'import']),
-            global_exporter               = any(identifier.kind == 'global' for identifier in meta_directive.identifiers),
-            body_lines                    = meta_directive.body_lines,
-            bytecode_name                 = None,
+    meta_main_content = ''
+
+    meta_main_content += textwrap.dedent(
+        '''\
+                def __META_MAIN__(__META_DIRECTIVE__):
+                    pass
+
+        '''
+    )
+
+
+
+    ################################################################################
+    #
+    # Create the meta-directive functions.
+    #
+
+
+
+    for meta_directive_i, meta_directive in enumerate(meta_directives):
+
+
+
+        # List all of the identifiers that the meta-directive will depend upon.
+
+        parameters = [
+            'Meta',
+            *[
+                identifier.name
+                for identifier in meta_directive.identifiers
+                if identifier.kind in ('import', 'implicit')
+            ]
+        ]
+
+
+
+        # List all of the identifiers that the
+        # meta-directive will define the value of.
+        # We have the dummy identifier `_` in case
+        # there's no identifier to be defined by the
+        # meta-directive.
+
+        identifiers_to_be_defined = ['_'] + [
+            identifier.name
+            for identifier in meta_directive.identifiers
+            if identifier.kind in ('export', 'global')
+        ]
+
+
+
+        # Make the meta-directive function that'll be executed by the decorator.
+
+        meta_main_content += textwrap.indent(textwrap.dedent(
+            f'''\
+                    @__META_DIRECTIVE__({meta_directive_i})
+                    def _({', '.join(parameters)}):
+
+                        global {', '.join(identifiers_to_be_defined)}
+
+            '''
+        ), ' ' * 4)
+
+
+
+        # Insert the code for the meta-directive.
+
+        meta_main_content += textwrap.indent(
+            '\n'.join(meta_directive.body_lines) + '\n',
+            ' ' * 8
         )
-        for meta_directive in meta_directives
-    ]
 
 
 
-    ################################################################################################################################
+    ################################################################################
     #
-    # The meta-decorator that handles the the set-up
-    # and resolution of a meta-directive's execution.
+    # Output the Python script of all meta-directives.
+    # This is purely for debugging and diagnostics.
     #
 
-    current_meta_directive_index = 0
-    Meta                         = __META__()
 
-    def __META_DECORATOR__(meta_globals):
+
+    meta_main_file_path = pathlib.Path(output_directory_path, '__meta_main__.py')
+
+    meta_main_file_path.parent.mkdir(parents = True, exist_ok = True)
+
+    meta_main_file_path.write_text(meta_main_content)
+
+
+
+    ################################################################################
+    #
+    # Decorator to handle the initialization and
+    # results of executing a meta-directive.
+    #
+
+
+
+    defined_identifiers = {}
+    Meta                = __META__()
+
+    def __META_DIRECTIVE__(meta_directive_i):
 
         def decorator(function):
 
-            nonlocal current_meta_directive_index, Meta
+            nonlocal defined_identifiers
 
 
 
-            # This should be the meta-directive that we're executing now.
+            # List the identifiers that the meta-directive will depend upon.
 
-            meta_directive = meta_directives[current_meta_directive_index]
-
-
-
-            # Start of the callback.
-
-            if callback is None:
-                callback_iterator = None
-
-            else:
-
-                callback_iterator = callback(current_meta_directive_index, meta_directives)
-
-                if not isinstance(callback_iterator, types.GeneratorType):
-                    raise RuntimeError('Callback must be a generator.')
-
-                try:
-                    next(callback_iterator)
-                except StopIteration:
-                    raise RuntimeError('The callback did not yield.')
+            parameters = { 'Meta' : Meta } | {
+                identifier.name : defined_identifiers[identifier.name]
+                for identifier in meta_directives[meta_directive_i].identifiers
+                if identifier.kind in ('import', 'implicit')
+            }
 
 
 
-            # Meta is special in that it needs to be a
-            # global singleton. This is for meta-directives
-            # that define functions that use Meta itself
-            # to generate code, and that function might
-            # be called in a different meta-directive.
-            # They all need to refer to the same object,
-            # so one singleton must be made for everyone
-            # to refer to. Still, checks are put in place
-            # to make Meta illegal to use in meta-directives
-            # that do not have an associated include-directive.
+            # Evaluate the meta-directive code.
 
-            function_globals = { 'Meta' : Meta }
+            function_globals = {}
 
+            Meta._start(meta_directives[meta_directive_i])
 
+            types.FunctionType(function.__code__, function_globals)(**parameters)
 
-            # We deepcopy exported values to be then put in
-            # the function's global namespace so that if a
-            # meta-directive mutates it for some reason, it'll
-            # only be contained within that meta-directive;
-            # this isn't really necessary, but since meta-directives
-            # are evaluated mostly out-of-order, it helps keep the
-            # uncertainty factor lower. This, however, does induce
-            # a performance hit if the object is quite large.
-
-            for symbol in meta_directive.imports:
-
-                # Modules are not deepcopy-able.
-                if isinstance(meta_globals[symbol], types.ModuleType):
-                    function_globals[symbol] = meta_globals[symbol]
-                else:
-                    function_globals[symbol] = copy.deepcopy(meta_globals[symbol])
-
-
-
-            # Execute the meta-directive.
-
-            Meta._start(meta_directive)
-            types.FunctionType(function.__code__, function_globals)()
             Meta._end()
 
 
 
-            # Copy the exported symbols into the
-            # collective symbol namespace so far.
+            # Record the new values for the identifiers
+            # that the meta-directive defined.
 
-            for symbol in meta_directive.exports:
-
-                if symbol not in function_globals:
-                    raise MetaError(
-                        [
-                            types.SimpleNamespace(
-                                file_path     = meta_directive.source_file_path,
-                                line_number   = meta_directive.meta_header_line_number,
-                                function_name = None,
-                            )
-                        ],
-                        RuntimeError(f'Symbol "{symbol}" was not defined.')
-                    )
-
-                meta_globals[symbol] = function_globals[symbol]
-
-
-
-            # End of callback.
-
-            if callback is not None:
-
-                try:
-                    callback_iterator.send(Meta.output)
-                    stopped = False
-                except StopIteration:
-                    stopped = True
-
-                if not stopped:
-                    raise RuntimeError('The callback did not return.')
-
-
-
-            # Onto next meta-directive!
-
-            current_meta_directive_index += 1
+            defined_identifiers |= function_globals
 
 
 
@@ -1654,193 +1645,15 @@ def do(*,
 
 
 
-    ################################################################################################################################
+    ################################################################################
     #
-    # Routine to handle exceptions that occured
-    # during compilation or execution of meta-directives.
-    #
-
-    def diagnose(error):
-
-
-
-        # Get the tracebacks after we begin executing
-        # the meta-directive's Python snippet.
-
-        traces = traceback.extract_tb(sys.exc_info()[2])
-
-        while traces and traces[0].name != '__META_DIRECTIVE__':
-            del traces[0]
-
-        contexts = []
-
-
-
-        # A meta-directive caused this syntax error.
-
-        if isinstance(error, SyntaxError) and not traces:
-
-            meta_directive = [
-                meta_directive
-                for meta_directive in meta_directives
-                if meta_directive.bytecode_name == error.filename
-            ]
-
-            if not meta_directive:
-                # Syntax error somewhere else obscure
-                # e.g: meta-directive running `exec` or importing.
-                raise
-
-            meta_directive, = meta_directive
-
-            contexts += [types.SimpleNamespace(
-                function_name = None,
-                file_path     = meta_directive.source_file_path,
-                line_number   = (
-                    (meta_directive.meta_header_line_number + 1)
-                        + error.lineno
-                        - meta_directive.body_line_number
-                ),
-            )]
-
-
-
-        # For most errors we can inspect the traceback
-        # to show all the levels of function calls.
-
-        else:
-
-
-
-            # Something else might've happened outside of the meta-directive.
-            # TODO Example?
-
-            if not traces:
-                raise
-
-
-
-            # Find each level of the stack; some might be in a
-            # meta-directive while others are in a imported module.
-
-            for trace in traces:
-
-                meta_directive = [
-                   meta_directive
-                   for meta_directive in meta_directives
-                   if meta_directive.bytecode_name == trace.filename
-                ]
-
-                if meta_directive:
-                    meta_directive,     = meta_directive
-                    context_file_path   = meta_directive.source_file_path
-                    context_line_number = (
-                        (meta_directive.meta_header_line_number + 1)
-                            + trace.lineno
-                            - meta_directive.body_line_number
-                    )
-                else:
-                    context_file_path   = pathlib.Path(trace.filename)
-                    context_line_number = trace.lineno
-
-                contexts += [types.SimpleNamespace(
-                    file_path     = context_file_path,
-                    line_number   = context_line_number,
-                    function_name = '#meta' if trace.name == '__META_DIRECTIVE__' else trace.name,
-                )]
-
-
-
-        # User deals with the exception now.
-
-        raise MetaError(contexts, error) from error
-
-
-
-    ################################################################################################################################
-    #
-    # Compile each meta-directive to catch any syntax errors.
+    # Begin evaluating the meta-directives.
     #
 
-    for meta_directive in meta_directives:
 
 
+    meta_main_globals = {}
 
-        # Every meta-directive is executed within
-        # a function context wrapped by the decorator.
+    exec(meta_main_content, {}, meta_main_globals)
 
-        meta_code = [
-            f'@__META_DECORATOR__(__META_GLOBALS__)',
-            f'def __META_DIRECTIVE__():',
-        ]
-
-
-
-        # List the things that the function is
-        # expected to define in the global namespace.
-
-        if meta_directive.exports:
-            meta_code += [
-                f'',
-                f'    global {', '.join(meta_directive.exports)}',
-            ]
-
-
-
-        # If the #meta directive has no code and
-        # doesn't export anything, the function
-        # would end up empty, which is invalid Python
-        # syntax; having a `pass` is a simple fix
-        # for this edge case.
-
-        meta_code += ['    pass']
-
-
-
-        # Inject the meta-directive's Python snippet.
-
-        meta_code += ['']
-
-        meta_directive.body_line_number = len(meta_code) + 1
-
-        meta_code += [
-            (' ' * (4 if line else 0)) + line
-            for line in deindent(
-                '\n'.join(meta_directive.body_lines),
-                multilined_string_literal = False,
-                single_line_comment       = '#'
-            ).splitlines()
-        ]
-
-
-
-        # Compile the meta-directive; this has to
-        # be done for each meta-directive individually
-        # rather than all together at once because a
-        # syntax error can "leak" across multiple meta-directives,
-        # to which it's then hard to identify where the
-        # exact source of the syntax error is.
-
-        meta_directive.bytecode_name = f'MetaDirective({meta_directive.source_file_path}:{meta_directive.meta_header_line_number})'
-
-        try:
-            meta_directive.bytecode = compile('\n'.join(meta_code), meta_directive.bytecode_name, 'exec')
-        except Exception as error:
-            diagnose(error)
-
-
-
-    ################################################################################################################################
-    #
-    # We now finally execute the meta-directives.
-    #
-
-    output_directory_path.mkdir(parents = True, exist_ok = True)
-
-    globals = { '__META_DECORATOR__' : __META_DECORATOR__, '__META_GLOBALS__' : {} }
-
-    for meta_directive in meta_directives:
-        try:
-            exec(meta_directive.bytecode, globals, {})
-        except Exception as error:
-            diagnose(error)
+    meta_main_globals['__META_MAIN__'](__META_DIRECTIVE__)

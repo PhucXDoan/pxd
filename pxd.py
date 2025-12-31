@@ -1276,10 +1276,6 @@ def deindent(
 
 
 
-from ..pxd.utils import OrderedSet # TODO Remove.
-
-
-
 def metapreprocess(*,
     output_directory_path,
     source_file_paths,
@@ -2072,7 +2068,7 @@ def metapreprocess(*,
 
                 # Some coherency checks.
 
-                if differences := OrderedSet(overloading) - parameters:
+                if differences := [overload for overload in overloading if overload not in parameters]:
                     raise ValueError(
                         f'Overloaded argument "{differences[0]}" not in macro\'s parameter-list.'
                     )
@@ -2094,7 +2090,7 @@ def metapreprocess(*,
                 # The name and parameters of this single macro instance itself.
 
                 name       = f'__MACRO_OVERLOAD__{name}__{'__'.join(map(str, overloading.values()))}'
-                parameters = list(OrderedSet(parameters) - overloading) or None
+                parameters = [parameter for parameter in parameters if parameter not in overloading] or None
 
 
 
@@ -2362,7 +2358,7 @@ def metapreprocess(*,
 
                     for macro, (parameters, overloading) in Meta.overloads.items():
 
-                        argument_list = OrderedSet(parameters) - overloading
+                        argument_list = [parameter for parameter in parameters if parameter not in overloading]
 
                         if argument_list : argument_list = f'({', '.join(argument_list)})'
                         else             : argument_list = ''

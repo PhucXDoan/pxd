@@ -3,953 +3,6 @@ from ..pxd.utils import justify, deindent, c_repr, coalesce, OrderedSet
 
 
 
-################################################################################################################################
-#
-# The main toolbox used in meta-directives to
-# generate nice looking C code in a low-friction way.
-#
-
-class __META__:
-
-
-
-    def _start(self, meta_directive):
-        self.meta_directive = meta_directive
-        self.output         = ''
-        self.indent         = 0
-        self.within_macro   = False
-        self.overloads      = {}
-        self.section_stack  = []
-
-
-
-    ################################################################################################################################
-    #
-    # Protect against accidentally using
-    # stuff related to code generation
-    # when the meta-directive has no file
-    # to output it to.
-    #
-
-    def __codegen(function):
-
-        def wrapper(self, *args, **kwargs):
-
-            if self.meta_directive.include_file_path is None:
-                raise RuntimeError(
-                    f'Using `Meta` to generate code is only allowed '
-                    f'when the meta-directives has an include-directive.'
-                )
-
-            return function(self, *args, **kwargs)
-
-        return wrapper
-
-
-
-    ################################################################################################################################
-    #
-    # Routine that gets invoked at the end of every meta-directive.
-    #
-
-    def _end(self):
-
-
-
-        # No generated code if there's no #include directive.
-
-        if self.meta_directive.include_file_path is None:
-            return
-
-
-
-        # We need to insert some stuff at the beginning of the file...
-
-        generated   = self.output
-        self.output = ''
-
-
-
-        # Indicate origin of the meta-directive in the generated output.
-
-        # TODO Have as an option?
-        # self.line(f'''
-        #     // [{self.meta_directive.source_file_path.as_posix()}:{self.meta_directive.include_line_number}].
-        # ''')
-
-
-
-        # Create the master macro for any overloaded macros.
-        # This has to be done first because the overloaded macros
-        # could be used later in the generated file after they're defined,
-        # and if we don't have the master macro to have the overloaded
-        # macros be invoked, errors will happen! We could also make the
-        # master macro when we're making the first overloaded macro instance,
-        # but this master macro could be inside of a #if, making it
-        # potentially unexpectedly undefined in certain situations.
-
-        if self.overloads:
-
-            for macro, (parameters, overloading) in self.overloads.items():
-
-
-
-                # The overloaded macro instance only has an argument-list if needed.
-                #
-                # e.g:
-                # >                                                              #define SAY(NAME) __MACRO_OVERLOAD__SAY__##NAME
-                # >    Meta.define('SAY', ('NAME'), 'meow', NAME = 'CAT')        #define __MACRO_OVERLOAD__SAY__CAT meow
-                # >    Meta.define('SAY', ('NAME'), 'bark', NAME = 'DOG')   ->   #define __MACRO_OVERLOAD__SAY__DOG bark
-                # >    Meta.define('SAY', ('NAME'), 'bzzz', NAME = 'BUG')        #define __MACRO_OVERLOAD__SAY__BUG bzzz
-                # >
-                #
-                # e.g:
-                # >                                                                            #define SAY(NAME, FUNC) __MACRO_OVERLOAD__SAY__##NAME(FUNC)
-                # >    Meta.define('SAY', ('NAME', 'FUNC'), 'FUNC(MEOW)', NAME = 'CAT')        #define __MACRO_OVERLOAD__SAY__CAT(FUNC) FUNC(MEOW)
-                # >    Meta.define('SAY', ('NAME', 'FUNC'), 'FUNC(BARK)', NAME = 'DOG')   ->   #define __MACRO_OVERLOAD__SAY__DOG(FUNC) FUNC(BARK)
-                # >    Meta.define('SAY', ('NAME', 'FUNC'), '     BZZZ ', NAME = 'BUG')        #define __MACRO_OVERLOAD__SAY__BUG(FUNC) BZZZ
-                # >
-                #
-
-                argument_list = OrderedSet(parameters) - overloading
-
-                if argument_list : argument_list = f'({', '.join(argument_list)})'
-                else             : argument_list = ''
-
-
-
-                # Output the master macro.
-
-                self.define(
-                    f'{macro}({', '.join(parameters)})',
-                    f'__MACRO_OVERLOAD__{macro}__##{'##'.join(overloading)}{argument_list}'
-                )
-
-
-
-        # Put back the rest of the code that was generated.
-
-        if generated:
-            self.line(generated)
-
-
-
-        # Spit out the generated code.
-
-        pathlib.Path(self.meta_directive.include_file_path).parent.mkdir(parents = True, exist_ok = True)
-        pathlib.Path(self.meta_directive.include_file_path).write_text(self.output)
-
-
-
-    ################################################################################################################################
-    #
-    # Helper routine to output lines.
-    #
-    # Example:
-    # >
-    # >    Meta.line('''
-    # >        printf("%d", 0);
-    # >        printf("%d", 1);
-    # >        printf("%d", 2);
-    # >        printf("%d", 3);
-    # >   ''')
-    # >
-    # >    Meta.line(
-    # >        'printf("%d", 0);',
-    # >        'printf("%d", 1);',
-    # >        'printf("%d", 2);',
-    # >        'printf("%d", 3);',
-    # >    )
-    # >
-    # >    Meta.line(f'printf("%d", {i});' for i in range(4))
-    # >
-    #
-
-    @__codegen
-    def line(self, *args):
-
-
-
-        if self.section_stack:
-            text               = self.section_stack[ -1]
-            self.section_stack = self.section_stack[:-1]
-            self.line(text)
-
-
-
-        if not args: # Create single empty line for `Meta.line()`.
-            args = ['''
-            ''']
-
-
-
-        for arg in args:
-
-            match arg:
-                case str() : strings = [arg]
-                case _     : strings = list(arg)
-
-            for string in strings:
-
-                for line in deindent(string).splitlines():
-
-
-
-                    # Reindent.
-
-                    line = ' ' * 4 * self.indent + line
-
-
-
-                    # Escape newlines for multi-lined macros.
-
-                    if self.within_macro:
-                        line += '\\'
-
-
-
-                    # No trailing spaces.
-
-                    line = line.rstrip()
-
-
-
-                    # Next line!
-
-                    self.output += line + '\n'
-
-
-
-    ################################################################################################################################
-    #
-    # Helper routine to handle scopes.
-    #
-    # Example:
-    # >
-    # >    with Meta.enter('#if CONDITION'):
-    # >        ...
-    # >
-    # >    with Meta.enter('if (CONDITION)'):
-    # >        ...
-    # >
-    # >    with Meta.enter('#define MACRO'):
-    # >        ...
-    # >
-    #
-    # Output:
-    # >
-    # >    #if CONDITION
-    # >        ...
-    # >    #endif
-    # >
-    # >    if (CONDITION)
-    # >    {
-    # >        ...
-    # >    }
-    # >
-    # >    #define MACRO \
-    # >        ... \
-    # >        ... \
-    # >        ... \
-    # >
-    #
-
-    @__codegen
-    @contextlib.contextmanager
-    def enter(self, header = None, opening = None, closing = None, *, indented = None):
-
-
-
-        # Determine the scope parameters.
-
-        header_is = lambda *keywords: header is not None and re.search(fr'^\s*({'|'.join(keywords)})\b', header)
-
-        if defining_macro := header_is('#define'):
-            self.within_macro = True
-
-        if   defining_macro                                         : suggestion = (None, None      , None)
-        elif header_is('#if', '#ifdef', '#elif', '#else')           : suggestion = (None, '#endif'  , None)
-        elif header_is('assert', 'static_assert', '_Static_assert') : suggestion = ('(' , ');'      , None)
-        elif header_is('struct', 'union', 'enum')                   : suggestion = ('{' , '};'      , None)
-        elif header_is('case')                                      : suggestion = ('{' , '} break;', None)
-        elif header is not None and header.strip().endswith('=')    : suggestion = ('{' , '};'      , True)
-        else                                                        : suggestion = ('{' , '}'       , None)
-
-        if opening  is None: opening  = suggestion[0]
-        if closing  is None: closing  = suggestion[1]
-        if indented is None: indented = suggestion[2]
-
-
-
-        # Header and opening lines.
-
-        if header is not None:
-            self.line(header)
-
-        if indented:
-            self.indent += 1
-
-        if opening:
-            self.line(opening)
-
-
-
-        # Body.
-
-        self.indent += 1
-        yield
-        self.indent -= 1
-
-
-
-        # Closing lines.
-
-        if closing is not None:
-            self.line(closing)
-
-        if indented:
-            self.indent -= 1
-
-        if defining_macro:
-            self.within_macro = False
-            self.line()
-
-
-
-    ################################################################################################################################
-    #
-    # Helper routine to make enumerations.
-    #
-    # Example:
-    # >
-    # >    Meta.enums('Card', 'u32', ('jack', 'queen', 'king', 'ace'))
-    # >
-    #
-    # Example:
-    # >
-    # >    with Meta.enums('Card', 'u32') as members:
-    # >        for card in ('jack', 'queen', 'king', 'ace'):
-    # >            members += [card]
-    # >
-    #
-    # Output:
-    # >
-    # >    enum Card : u32
-    # >    {
-    # >        Card_jack,
-    # >        Card_queen,
-    # >        Card_king,
-    # >        Card_ace,
-    # >    };
-    # >    static constexpr u32 Card_COUNT = 4;
-    # >
-    #
-
-
-
-    # The actual routine to create the enumeration is a class so
-    # that `Meta.enums` can be used as a context-manager if needed.
-
-    @__codegen
-    def enums(self, *args, **kwargs):
-        return self.__enums(self, *args, **kwargs)
-
-    class __enums:
-
-
-
-        # Whether or not we determine if `Meta.enums` is being used
-        # as a context-manager is if the list of members is provided.
-
-        def __init__(
-            self,
-            meta,
-            enum_name,
-            enum_type,
-            members = None,
-            count   = 'constexpr'
-        ):
-
-            self.meta      = meta
-            self.enum_name = enum_name
-            self.enum_type = enum_type
-            self.members   = members
-            self.count     = count
-
-            if self.members is not None:
-                self.__exit__()
-
-
-
-        # By using a context-manager, the user can
-        # create the list of enumeration members
-        # with more complicated logic.
-
-        def __enter__(self):
-
-            if self.members is not None:
-                raise ValueError(
-                    f'Cannot use `Meta.enums` as a context-manager '
-                    f'when members are already provided.'
-                )
-
-            self.members = []
-
-            return self.members
-
-
-
-        # Here we generate the output whether or
-        # not a context-manager was actually used.
-
-        def __exit__(self, *dont_care_about_exceptions):
-
-
-
-            # By providing "enum_type", we can specify the width of the enumeration members;
-            # this, however, is only supported in C++ and C23.
-            # e.g: Meta.enums('Planet', 'u32', ...)   ->   enum Planet : u32 { ... }
-            # e.g: Meta.enums('Planet', None , ...)   ->   enum Planet       { ... }
-
-            if self.enum_type is None:
-                enum_type_suffix = ''
-            else:
-                enum_type_suffix = f' : {self.enum_type}'
-
-
-
-            # Format the list of members, some of which may be a name-value pair.
-            # e.g:
-            # >                                       enums Card : u32
-            # >    Meta.enums('Card', 'u32', (        {
-            # >        ('jack' , 1),                      Card_jack  = 1,
-            # >        ('queen', 2),                      Card_queen = 2,
-            # >        ('king'    ),             ->       Card_king,
-            # >        ('ace'     ),                      Card_ace,
-            # >        ('null' , 0),                      Card_null  = 0,
-            # >    ))                                 };
-            # >
-
-            self.members = list(self.members)
-
-            for member_i, member in enumerate(self.members):
-
-                match member:
-                    case (name, value) : value = c_repr(value)
-                    case  name         : value = ...
-
-                self.members[member_i] = (f'{self.enum_name}_{c_repr(name)}', value)
-
-
-
-            # Output the enumeration members with alignment.
-
-            if self.members:
-
-                with self.meta.enter(f'''
-                    enum {self.enum_name}{enum_type_suffix}
-                '''):
-
-                    for name, value, just_name in justify(
-                        (
-                            (None, name ),
-                            (None, value),
-                            ('<' , name ),
-                        )
-                        for name, value in self.members
-                    ):
-                        if value is ...:
-                            self.meta.line(f'{name},')
-                        else:
-                            self.meta.line(f'{just_name} = {value},')
-
-
-
-            # When there's no members, we have to forward-declare it,
-            # because C doesn't allow empty enumerations.
-
-            else:
-                self.meta.line(f'enum {self.enum_name}{enum_type_suffix};')
-
-
-
-            # Provide the amount of enumeration members that were defined;
-            # this is useful for creating arrays and iterating with
-            # for-loops and such.
-
-            match self.count:
-
-
-
-                # Don't emit the count.
-
-                case None:
-                    pass
-
-
-
-                # Use a macro, but this will have the disadvantage of
-                # not being scoped and might result in a name conflict.
-                # Most of the time, enumerations are defined at the global
-                # level, so this wouldn't matter, but enumerations can
-                # also be declared within a function; if so, then another
-                # enumeration of the same name cannot be declared later
-                # or else there'll be multiple #defines with different values.
-
-                case 'define':
-                    self.meta.define(f'{self.enum_name}_COUNT', len(self.members))
-
-
-
-                # Use a separate, anonymous enumeration definition to make the count.
-                # Unlike "define", this will be scoped, so it won't suffer the same
-                # issue of name conflicts. However, the compiler could emit warnings
-                # if comparisons are made between the enumeration members and this
-                # member count, because they are from different enumeration groups.
-
-                case 'enum':
-                    self.meta.line(f'''
-                        enum{enum_type_suffix} {{ {self.enum_name}_COUNT = {len(self.members)} }};
-                    ''')
-
-
-
-                # Use a constexpr declaration to declare the member count.
-                # Unlike "enum", the type of the constant is the same type
-                # as the underlying type of the enumeration, so the compiler
-                # shouldn't warn about comparisons between the two.
-                # This approach, however, relies on C23 or C++.
-
-                case 'constexpr':
-                    self.meta.line(f'''
-                        static constexpr {self.enum_type} {self.enum_name}_COUNT = {len(self.members)};
-                    ''')
-
-
-
-                # Unknown member-count style.
-
-                case unknown:
-                    raise ValueError(f'Unknown member-count style of {repr(unknown)}.')
-
-
-
-    ################################################################################################################################
-    #
-    # Helper routine to create C macro definitions.
-    #
-    # Example:
-    # >
-    # >    Meta.define('PI', 3.1415)
-    # >
-    # >    Meta.define('MAX', ('X', 'Y'), '((X) < (Y) ? (Y) : (X))')
-    # >
-    # >    Meta.define('WORDIFY', ('NUMBER'), 'ZERO' , NUMBER = 0)
-    # >    Meta.define('WORDIFY', ('NUMBER'), 'ONE'  , NUMBER = 1)
-    # >    Meta.define('WORDIFY', ('NUMBER'), 'TWO'  , NUMBER = 2)
-    # >    Meta.define('WORDIFY', ('NUMBER'), 'THREE', NUMBER = 3)
-    # >
-    #
-    # Output:
-    # >
-    # >    #define PI 3.1415
-    # >
-    # >    #define MAX(X, Y) ((X) < (Y) ? (Y) : (X))
-    # >
-    # >    #define WORDIFY(NUMBER) __MACRO_OVERLOAD__WORDIFY__##NUMBER
-    # >    #define __MACRO_OVERLOAD__WORDIFY__0 ZERO
-    # >    #define __MACRO_OVERLOAD__WORDIFY__1 ONE
-    # >    #define __MACRO_OVERLOAD__WORDIFY__2 TWO
-    # >    #define __MACRO_OVERLOAD__WORDIFY__3 THREE
-    #
-
-    @__codegen
-    def define(self, *args, do_while = False, **overloading):
-
-
-
-        # Parse syntax of the call.
-
-        match args:
-
-
-
-            # e.g: Meta.define('PI', 3.1415)
-
-            case (name, expansion):
-                parameters = None
-
-
-
-            # e.g: Meta.define('MAX', ('X', 'Y'), '((X) < (Y) ? (Y) : (X))')
-
-            case (name, (*parameters,), expansion):
-                pass
-
-
-
-            # e.g: Meta.define('TWICE', ('X'), '((X) * 2)')
-            # e.g: Meta.define('PI'   , None , 3.1415     )
-
-            case (name, parameter, expansion):
-                if parameter is None:
-                    parameters = None
-                else:
-                    parameters = [parameter]
-
-
-
-            # Unknown syntax.
-
-            case unknown:
-                raise ValueError(
-                    f'Not sure what to do with the '
-                    f'set of arguments: {repr(args)}.'
-                )
-
-
-
-        # Macros can be "overloaded" by doing
-        # concatenation of a preprocessor-time value.
-        # e.g:
-        # >
-        # >    #define FOOBAR_ABC     3.14
-        # >    #define FOOBAR_IJK     1000
-        # >    #define FOOBAR_XYZ     "Hello"
-        # >    #define FOOBAR(SUFFIX) FOOBAR_##SUFFIX
-        # >
-        # >    FOOBAR(IJK)   ->   FOOBAR_IJK   ->   1000
-        # >
-
-        if overloading:
-
-
-
-            # To C values.
-
-            overloading = { key : c_repr(value) for key, value in overloading.items() }
-
-
-
-            # Some coherency checks.
-
-            if differences := OrderedSet(overloading) - parameters:
-                raise ValueError(
-                    f'Overloaded argument "{differences[0]}" not in macro\'s parameter-list.'
-                )
-
-            if name in self.overloads and self.overloads[name] != (parameters, tuple(overloading.keys())):
-                raise ValueError(
-                    f'This overloaded macro instance has a different parameter-list from others.'
-                )
-
-
-
-            # Make note of the fact that there'll be multiple instances of the "same macro".
-
-            if name not in self.overloads:
-                self.overloads[name] = (parameters, tuple(overloading.keys()))
-
-
-
-            # The name and parameters of this single macro instance itself.
-
-            name       = f'__MACRO_OVERLOAD__{name}__{'__'.join(map(str, overloading.values()))}'
-            parameters = list(OrderedSet(parameters) - overloading) or None
-
-
-
-        # Determine the prototype of the macro.
-
-        if parameters is None:
-            prototype = f'{name}'
-        else:
-            prototype = f'{name}({', '.join(parameters)})'
-
-
-
-        # Format the macro's expansion.
-
-        expansion = deindent(c_repr(expansion))
-
-
-
-        # Output macro that will multiple lines.
-
-        if '\n' in expansion:
-
-            with self.enter(f'#define {prototype}'):
-
-
-
-                # Generate multi-lined macro wrapped in do-while.
-                # e.g:
-                # >
-                # >    #define <prototype> \
-                # >        do \
-                # >        { \
-                # >            <expansion> \
-                # >            <expansion> \
-                # >            <expansion> \
-                # >        } \
-                # >        while (false) \
-                # >
-
-                if do_while:
-                    with self.enter('do', '{', '}\nwhile (false)'):
-                        self.line(expansion)
-
-
-
-                # Generate unwrapped multi-lined macro.
-                # e.g:
-                # >
-                # >    #define <prototype> \
-                # >        <expansion> \
-                # >        <expansion> \
-                # >        <expansion> \
-                # >
-
-                else:
-                    self.line(expansion)
-
-
-
-        # Just output a single-line macro wrapped in do-while.
-
-        elif do_while:
-            self.line(f'#define {prototype} do {{ {expansion} }} while (false)')
-
-
-
-        # Just output an unwrapped single-line macro.
-
-        else:
-            self.line(f'#define {prototype} {expansion}')
-
-
-
-    ################################################################################################################################
-    #
-    # Helper routine to create look-up tables.
-    # > e.g:
-    # >
-    # >    Meta.lut('PLANETS', (
-    # >        (
-    # >            planet_i,
-    # >            ('char*', 'name'  , name  ),
-    # >            ('i32'  , 'mass'  , mass  ),
-    # >            ('f64'  , 'radius', radius),
-    # >        ) for planet_i, (name, mass, radius) in enumerate(PLANETS)
-    # >    ))
-    # >
-    #
-
-    @__codegen
-    def lut(self, *arguments):
-
-
-
-        # Parse the argument format.
-
-        match arguments:
-
-
-
-            # The type for the table is provided.
-            # e.g:
-            # >
-            # >    static const struct <table_type> <table_name>[] =
-            # >        {
-            # >            [<index>] = { <value>, <value>, <value> },
-            # >            [<index>] = { <value>, <value>, <value> },
-            # >            [<index>] = { <value>, <value>, <value> },
-            # >        };
-            # >
-
-            case (table_type, table_name, table_rows):
-                pass
-
-
-
-            # The type for the table will be created automatically.
-            # e.g:
-            # >
-            # >    static const struct { <type> <name>; <type> <name>; <type> <name>; } <table_name>[] =
-            # >        {
-            # >            [<index>] = { .<name> = <value>, .<name> = <value>, .<name> = <value> },
-            # >            [<index>] = { .<name> = <value>, .<name> = <value>, .<name> = <value> },
-            # >            [<index>] = { .<name> = <value>, .<name> = <value>, .<name> = <value> },
-            # >        };
-            # >
-
-            case (table_name, table_rows):
-
-                table_type = None
-
-
-
-            case unknown:
-                raise ValueError(f'Unknown set of arguments: {repr(unknown)}.')
-
-
-
-        # Make each table row have an index, or have it be `None` if not provided.
-        # e.g:
-        # >
-        # >    Meta.lut(<table_name>, ((
-        # >        <index>,
-        # >        (<type>, <name>, <value>),
-        # >        (<type>, <name>, <value>),
-        # >        (<type>, <name>, <value>),
-        # >    ) for x in xs))
-        # >
-
-        table_rows = list(list(row) for row in table_rows)
-
-        for row_i, row in enumerate(table_rows):
-            if row and (isinstance(row[0], tuple) or isinstance(row[0], list)):
-                table_rows[row_i] = [None, *row]
-
-
-
-        # Determine the type of each member.
-
-        for table_row_i, (row_indexing, *members) in enumerate(table_rows):
-
-            for member_i, member in enumerate(members):
-
-                match member:
-
-
-
-                    # The type of each member is explicitly given.
-                    # e.g:
-                    # >
-                    # >    Meta.lut(<table_name>, ((
-                    # >        <index>,
-                    # >        (<type>, <name>, <value>),
-                    # >        (<type>, <name>, <value>),
-                    # >        (<type>, <name>, <value>),
-                    # >    ) for x in xs))
-                    # >
-
-                    case [member_type, member_name, member_value]:
-
-                        if table_type is not None:
-                            raise ValueError(
-                                f'Member type shouldn\'t be given when '
-                                f'the table type is already provided.'
-                            )
-
-
-
-                    # The type of each member is not given either because
-                    # it's not needed or it'll be inferred automatically.
-                    # e.g:
-                    # >
-                    # >    Meta.lut(<table_name>, ((
-                    # >        <index>,
-                    # >        (<name>, <value>),
-                    # >        (<name>, <value>),
-                    # >        (<name>, <value>),
-                    # >    ) for x in xs))
-                    # >
-
-                    case [member_name, member_value]:
-
-                        member_type = None
-
-
-
-                    case unknown:
-                        raise ValueError(f'Unknown row member format: {repr(unknown)}.')
-
-
-
-                members[member_i] = [member_type, member_name, c_repr(member_value)]
-
-
-
-            table_rows[table_row_i] = [row_indexing, members]
-
-
-
-        # Determine the table type.
-
-        if table_type is None:
-
-            match table_rows:
-
-
-
-                # This is just how we're going to handle empty tables.
-
-                case []:
-
-                    table_type = 'struct {}'
-
-
-
-                # Create the type for the table.
-
-                case [[first_row_indexing, first_row_members], *rest]:
-
-                    table_type = f'struct {{ {' '.join(
-                        [
-                            f'{member_type if member_type is not None else f'typeof({member_value})'} {member_name};'
-                            for member_type, member_name, member_value in first_row_members
-                        ] if table_rows else []
-                    )} }}'
-
-
-
-                case unknown:
-                    assert False, unknown
-
-
-
-        # Generate the table with nice, aligned columns.
-
-        with self.enter(f'static const {table_type} {table_name}[] ='):
-
-            for just_row_indexing, *just_fields in justify(
-                (
-                    ('<', f'[{row_indexing}] = ' if row_indexing is not None else ''),
-                    *(
-                        ('<', f'.{member_name} = {member_value}')
-                        for member_type, member_name, member_value in members
-                    ),
-                )
-                for row_indexing, members in table_rows
-            ):
-                self.line(f'{just_row_indexing}{{ {', '.join(just_fields)} }},')
-
-
-
-    ################################################################################################################################
-    #
-    # Helper routine to create a section header if any code was generated.
-    #
-
-    @__codegen
-    @contextlib.contextmanager
-    def section(self, text):
-
-        original_depth      = len(self.section_stack)
-        self.section_stack += [text]
-
-        yield
-
-        self.section_stack = self.section_stack[:original_depth]
-
-
-
-################################################################################################################################
-#
-# The main routine to run the meta-preprocessor.
-#
-
 def do(*,
     output_directory_path,
     source_file_paths,
@@ -1380,11 +433,650 @@ def do(*,
 
 
 
+    #
+
+
+    class Meta:
+
+        meta_directive = meta_directives[meta_directive_i]
+        output         = ''
+        indent         = 0
+        within_macro   = False
+        overloads      = {}
+        section_stack  = []
+
+        ################################################################################################################################
+        #
+        # Helper routine to output lines.
+        #
+        # Example:
+        # >
+        # >    Meta.line('''
+        # >        printf("%d", 0);
+        # >        printf("%d", 1);
+        # >        printf("%d", 2);
+        # >        printf("%d", 3);
+        # >   ''')
+        # >
+        # >    Meta.line(
+        # >        'printf("%d", 0);',
+        # >        'printf("%d", 1);',
+        # >        'printf("%d", 2);',
+        # >        'printf("%d", 3);',
+        # >    )
+        # >
+        # >    Meta.line(f'printf("%d", {i});' for i in range(4))
+        # >
+        #
+
+        def line(*args):
+
+
+
+            if Meta.section_stack:
+                text               = Meta.section_stack[ -1]
+                Meta.section_stack = Meta.section_stack[:-1]
+                Meta.line(text)
+
+
+
+            if not args: # Create single empty line for `Meta.line()`.
+                args = ['''
+                ''']
+
+
+
+            for arg in args:
+
+                match arg:
+                    case str() : strings = [arg]
+                    case _     : strings = list(arg)
+
+                for string in strings:
+
+                    for line in deindent(string).splitlines():
+
+
+
+                        # Reindent.
+
+                        line = ' ' * 4 * Meta.indent + line
+
+
+
+                        # Escape newlines for multi-lined macros.
+
+                        if Meta.within_macro:
+                            line += '\\'
+
+
+
+                        # No trailing spaces.
+
+                        line = line.rstrip()
+
+
+
+                        # Next line!
+
+                        Meta.output += line + '\n'
+
+
+
+        ################################################################################################################################
+        #
+        # Helper routine to handle scopes.
+        #
+        # Example:
+        # >
+        # >    with Meta.enter('#if CONDITION'):
+        # >        ...
+        # >
+        # >    with Meta.enter('if (CONDITION)'):
+        # >        ...
+        # >
+        # >    with Meta.enter('#define MACRO'):
+        # >        ...
+        # >
+        #
+        # Output:
+        # >
+        # >    #if CONDITION
+        # >        ...
+        # >    #endif
+        # >
+        # >    if (CONDITION)
+        # >    {
+        # >        ...
+        # >    }
+        # >
+        # >    #define MACRO \
+        # >        ... \
+        # >        ... \
+        # >        ... \
+        # >
+        #
+
+        @contextlib.contextmanager
+        def enter(header = None, opening = None, closing = None, *, indented = None):
+
+
+
+            # Determine the scope parameters.
+
+            header_is = lambda *keywords: header is not None and re.search(fr'^\s*({'|'.join(keywords)})\b', header)
+
+            if defining_macro := header_is('#define'):
+                Meta.within_macro = True
+
+            if   defining_macro                                         : suggestion = (None, None      , None)
+            elif header_is('#if', '#ifdef', '#elif', '#else')           : suggestion = (None, '#endif'  , None)
+            elif header_is('assert', 'static_assert', '_Static_assert') : suggestion = ('(' , ');'      , None)
+            elif header_is('struct', 'union', 'enum')                   : suggestion = ('{' , '};'      , None)
+            elif header_is('case')                                      : suggestion = ('{' , '} break;', None)
+            elif header is not None and header.strip().endswith('=')    : suggestion = ('{' , '};'      , True)
+            else                                                        : suggestion = ('{' , '}'       , None)
+
+            if opening  is None: opening  = suggestion[0]
+            if closing  is None: closing  = suggestion[1]
+            if indented is None: indented = suggestion[2]
+
+
+
+            # Header and opening lines.
+
+            if header is not None:
+                Meta.line(header)
+
+            if indented:
+                Meta.indent += 1
+
+            if opening:
+                Meta.line(opening)
+
+
+
+            # Body.
+
+            Meta.indent += 1
+            yield
+            Meta.indent -= 1
+
+
+
+            # Closing lines.
+
+            if closing is not None:
+                Meta.line(closing)
+
+            if indented:
+                Meta.indent -= 1
+
+            if defining_macro:
+                Meta.within_macro = False
+                Meta.line()
+
+
+
+        ################################################################################################################################
+
+
+
+        # The actual routine to create the enumeration is a class so
+        # that `Meta.enums` can be used as a context-manager if needed.
+
+        def enums(*args, **kwargs):
+            return Meta.__enums(*args, **kwargs)
+
+        class __enums:
+
+
+
+            # Whether or not we determine if `Meta.enums` is being used
+            # as a context-manager is if the list of members is provided.
+
+            def __init__(
+                self,
+                enum_name,
+                enum_type,
+                members = None,
+                count   = 'constexpr'
+            ):
+
+                self.enum_name = enum_name
+                self.enum_type = enum_type
+                self.members   = members
+                self.count     = count
+
+                if self.members is not None:
+                    self.__exit__()
+
+
+
+            # By using a context-manager, the user can
+            # create the list of enumeration members
+            # with more complicated logic.
+
+            def __enter__(self):
+
+                if self.members is not None:
+                    raise ValueError(
+                        f'Cannot use `Meta.enums` as a context-manager '
+                        f'when members are already provided.'
+                    )
+
+                self.members = []
+
+                return self.members
+
+
+
+            # Here we generate the output whether or
+            # not a context-manager was actually used.
+
+            def __exit__(self, *dont_care_about_exceptions):
+
+
+
+                # By providing "enum_type", we can specify the width of the enumeration members;
+                # this, however, is only supported in C++ and C23.
+                # e.g: Meta.enums('Planet', 'u32', ...)   ->   enum Planet : u32 { ... }
+                # e.g: Meta.enums('Planet', None , ...)   ->   enum Planet       { ... }
+
+                if self.enum_type is None:
+                    enum_type_suffix = ''
+                else:
+                    enum_type_suffix = f' : {self.enum_type}'
+
+
+
+                # Format the list of members, some of which may be a name-value pair.
+
+                self.members = list(self.members)
+
+                for member_i, member in enumerate(self.members):
+
+                    match member:
+                        case (name, value) : value = c_repr(value)
+                        case  name         : value = ...
+
+                    self.members[member_i] = (f'{self.enum_name}_{c_repr(name)}', value)
+
+
+
+                # Output the enumeration members with alignment.
+
+                if self.members:
+
+                    with Meta.enter(f'''
+                        enum {self.enum_name}{enum_type_suffix}
+                    '''):
+
+                        for name, value, just_name in justify(
+                            (
+                                (None, name ),
+                                (None, value),
+                                ('<' , name ),
+                            )
+                            for name, value in self.members
+                        ):
+                            if value is ...:
+                                Meta.line(f'{name},')
+                            else:
+                                Meta.line(f'{just_name} = {value},')
+
+
+
+                # When there's no members, we have to forward-declare it,
+                # because C doesn't allow empty enumerations.
+
+                else:
+                    Meta.line(f'enum {self.enum_name}{enum_type_suffix};')
+
+
+
+                # Provide the amount of enumeration members that were defined;
+                # this is useful for creating arrays and iterating with
+                # for-loops and such.
+
+                match self.count:
+
+
+
+                    # Don't emit the count.
+
+                    case None:
+                        pass
+
+
+
+                    # Use a macro, but this will have the disadvantage of
+                    # not being scoped and might result in a name conflict.
+                    # Most of the time, enumerations are defined at the global
+                    # level, so this wouldn't matter, but enumerations can
+                    # also be declared within a function; if so, then another
+                    # enumeration of the same name cannot be declared later
+                    # or else there'll be multiple #defines with different values.
+
+                    case 'define':
+                        Meta.define(f'{self.enum_name}_COUNT', len(self.members))
+
+
+
+                    # Use a separate, anonymous enumeration definition to make the count.
+                    # Unlike "define", this will be scoped, so it won't suffer the same
+                    # issue of name conflicts. However, the compiler could emit warnings
+                    # if comparisons are made between the enumeration members and this
+                    # member count, because they are from different enumeration groups.
+
+                    case 'enum':
+                        Meta.line(f'''
+                            enum{enum_type_suffix} {{ {self.enum_name}_COUNT = {len(self.members)} }};
+                        ''')
+
+
+
+                    # Use a constexpr declaration to declare the member count.
+                    # Unlike "enum", the type of the constant is the same type
+                    # as the underlying type of the enumeration, so the compiler
+                    # shouldn't warn about comparisons between the two.
+                    # This approach, however, relies on C23 or C++.
+
+                    case 'constexpr':
+                        Meta.line(f'''
+                            static constexpr {self.enum_type} {self.enum_name}_COUNT = {len(self.members)};
+                        ''')
+
+
+
+                    # Unknown member-count style.
+
+                    case unknown:
+                        raise ValueError(f'Unknown member-count style of {repr(unknown)}.')
+
+
+
+        # Helper routine to create C macro definitions.
+
+        def define(*args, do_while = False, **overloading):
+
+
+
+            # Parse syntax of the call.
+
+            match args:
+
+
+
+                case (name, expansion):
+                    parameters = None
+
+
+
+                case (name, (*parameters,), expansion):
+                    pass
+
+
+
+                case (name, parameter, expansion):
+                    if parameter is None:
+                        parameters = None
+                    else:
+                        parameters = [parameter]
+
+
+
+                # Unknown syntax.
+
+                case unknown:
+                    raise ValueError(
+                        f'Not sure what to do with the '
+                        f'set of arguments: {repr(args)}.'
+                    )
+
+
+
+            # Macros can be "overloaded" by doing
+            # concatenation of a preprocessor-time value.
+
+            if overloading:
+
+
+
+                # To C values.
+
+                overloading = { key : c_repr(value) for key, value in overloading.items() }
+
+
+
+                # Some coherency checks.
+
+                if differences := OrderedSet(overloading) - parameters:
+                    raise ValueError(
+                        f'Overloaded argument "{differences[0]}" not in macro\'s parameter-list.'
+                    )
+
+                if name in Meta.overloads and Meta.overloads[name] != (parameters, tuple(overloading.keys())):
+                    raise ValueError(
+                        f'This overloaded macro instance has a different parameter-list from others.'
+                    )
+
+
+
+                # Make note of the fact that there'll be multiple instances of the "same macro".
+
+                if name not in Meta.overloads:
+                    Meta.overloads[name] = (parameters, tuple(overloading.keys()))
+
+
+
+                # The name and parameters of this single macro instance itself.
+
+                name       = f'__MACRO_OVERLOAD__{name}__{'__'.join(map(str, overloading.values()))}'
+                parameters = list(OrderedSet(parameters) - overloading) or None
+
+
+
+            # Determine the prototype of the macro.
+
+            if parameters is None:
+                prototype = f'{name}'
+            else:
+                prototype = f'{name}({', '.join(parameters)})'
+
+
+
+            # Format the macro's expansion.
+
+            expansion = deindent(c_repr(expansion))
+
+
+
+            # Output macro that will multiple lines.
+
+            if '\n' in expansion:
+
+                with Meta.enter(f'#define {prototype}'):
+
+                    if do_while:
+                        with Meta.enter('do', '{', '}\nwhile (false)'):
+                            Meta.line(expansion)
+
+                    else:
+                        Meta.line(expansion)
+
+
+
+            # Just output a single-line macro wrapped in do-while.
+
+            elif do_while:
+                Meta.line(f'#define {prototype} do {{ {expansion} }} while (false)')
+
+
+
+            # Just output an unwrapped single-line macro.
+
+            else:
+                Meta.line(f'#define {prototype} {expansion}')
+
+
+
+        # Helper routine to create look-up tables.
+
+        def lut(*arguments):
+
+
+
+            # Parse the argument format.
+
+            match arguments:
+
+
+
+                # The type for the table is provided.
+
+                case (table_type, table_name, table_rows):
+                    pass
+
+
+
+                # The type for the table will be created automatically.
+
+                case (table_name, table_rows):
+
+                    table_type = None
+
+
+
+                case unknown:
+                    raise ValueError(f'Unknown set of arguments: {repr(unknown)}.')
+
+
+
+            # Make each table row have an index, or have it be `None` if not provided.
+
+            table_rows = list(list(row) for row in table_rows)
+
+            for row_i, row in enumerate(table_rows):
+                if row and (isinstance(row[0], tuple) or isinstance(row[0], list)):
+                    table_rows[row_i] = [None, *row]
+
+
+
+            # Determine the type of each member.
+
+            for table_row_i, (row_indexing, *members) in enumerate(table_rows):
+
+                for member_i, member in enumerate(members):
+
+                    match member:
+
+
+
+                        # The type of each member is explicitly given.
+
+                        case [member_type, member_name, member_value]:
+
+                            if table_type is not None:
+                                raise ValueError(
+                                    f'Member type shouldn\'t be given when '
+                                    f'the table type is already provided.'
+                                )
+
+
+
+                        # The type of each member is not given either because
+                        # it's not needed or it'll be inferred automatically.
+
+                        case [member_name, member_value]:
+
+                            member_type = None
+
+
+
+                        case unknown:
+                            raise ValueError(f'Unknown row member format: {repr(unknown)}.')
+
+
+
+                    members[member_i] = [member_type, member_name, c_repr(member_value)]
+
+
+
+                table_rows[table_row_i] = [row_indexing, members]
+
+
+
+            # Determine the table type.
+
+            if table_type is None:
+
+                match table_rows:
+
+
+
+                    # This is just how we're going to handle empty tables.
+
+                    case []:
+
+                        table_type = 'struct {}'
+
+
+
+                    # Create the type for the table.
+
+                    case [[first_row_indexing, first_row_members], *rest]:
+
+                        table_type = f'struct {{ {' '.join(
+                            [
+                                f'{member_type if member_type is not None else f'typeof({member_value})'} {member_name};'
+                                for member_type, member_name, member_value in first_row_members
+                            ] if table_rows else []
+                        )} }}'
+
+
+
+                    case unknown:
+                        assert False, unknown
+
+
+
+            # Generate the table with nice, aligned columns.
+
+            with Meta.enter(f'static const {table_type} {table_name}[] ='):
+
+                for just_row_indexing, *just_fields in justify(
+                    (
+                        ('<', f'[{row_indexing}] = ' if row_indexing is not None else ''),
+                        *(
+                            ('<', f'.{member_name} = {member_value}')
+                            for member_type, member_name, member_value in members
+                        ),
+                    )
+                    for row_indexing, members in table_rows
+                ):
+                    Meta.line(f'{just_row_indexing}{{ {', '.join(just_fields)} }},')
+
+
+
+        # Helper routine to create a section header if any code was generated.
+
+        @contextlib.contextmanager
+        def section(text):
+
+            original_depth      = len(Meta.section_stack)
+            Meta.section_stack += [text]
+
+            yield
+
+            Meta.section_stack = Meta.section_stack[:original_depth]
+
+
+
     # Decorator to handle the initialization and
     # results of executing a meta-directive.
 
     defined_identifiers = {}
-    Meta                = __META__()
 
     def __META_DIRECTIVE__(meta_directive_i):
 
@@ -1408,11 +1100,74 @@ def do(*,
 
             function_globals = {}
 
-            Meta._start(meta_directives[meta_directive_i])
+            Meta.meta_directive = meta_directives[meta_directive_i]
+            Meta.output         = ''
+            Meta.indent         = 0
+            Meta.within_macro   = False
+            Meta.overloads      = {}
+            Meta.section_stack  = []
+
+
+
+            # TODO.
 
             types.FunctionType(function.__code__, function_globals)(**parameters)
 
-            Meta._end()
+
+
+            # TODO
+
+            if Meta.meta_directive.include_file_path is not None:
+
+
+
+                # We need to insert some stuff at the beginning of the file...
+
+                generated   = Meta.output
+                Meta.output = ''
+
+
+
+                # Create the master macro for any overloaded macros.
+                # This has to be done first because the overloaded macros
+                # could be used later in the generated file after they're defined,
+                # and if we don't have the master macro to have the overloaded
+                # macros be invoked, errors will happen! We could also make the
+                # master macro when we're making the first overloaded macro instance,
+                # but this master macro could be inside of a #if, making it
+                # potentially unexpectedly undefined in certain situations.
+
+                if Meta.overloads:
+
+                    for macro, (parameters, overloading) in Meta.overloads.items():
+
+                        argument_list = OrderedSet(parameters) - overloading
+
+                        if argument_list : argument_list = f'({', '.join(argument_list)})'
+                        else             : argument_list = ''
+
+
+
+                        # Output the master macro.
+
+                        Meta.define(
+                            f'{macro}({', '.join(parameters)})',
+                            f'__MACRO_OVERLOAD__{macro}__##{'##'.join(overloading)}{argument_list}'
+                        )
+
+
+
+                # Put back the rest of the code that was generated.
+
+                if generated:
+                    Meta.line(generated)
+
+
+
+                # Spit out the generated code.
+
+                pathlib.Path(Meta.meta_directive.include_file_path).parent.mkdir(parents = True, exist_ok = True)
+                pathlib.Path(Meta.meta_directive.include_file_path).write_text(Meta.output)
 
 
 

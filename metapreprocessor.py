@@ -1,168 +1,5 @@
-import pathlib, types, contextlib, re, traceback, sys, copy, string, collections, importlib, textwrap
-from ..pxd.log   import log, ANSI, Indent
-from ..pxd.utils import justify, deindent, c_repr, find_dupe, coalesce, OrderedSet
-
-
-
-################################################################################################################################
-#
-# A wrapper around exceptions that
-# are thrown during meta-preprocessing.
-# The wrapper also provides a routine
-# to print out a nice diagnostic.
-#
-
-class MetaError(Exception):
-
-
-
-    def __init__(self, contexts, underlying_exception):
-        self.contexts             = contexts
-        self.underlying_exception = underlying_exception
-
-
-
-    def dump(self):
-
-
-
-        # Load the file and get the lines around the context.
-
-        for context in self.contexts:
-            context.lines = [
-                ((line_i + 1) - context.line_number, line)
-                for line_i, line in enumerate(
-                    context.file_path.read_text().splitlines()
-                )
-                if abs((line_i + 1) - context.line_number) <= 4
-            ]
-
-
-
-        # Log each context.
-
-        log()
-
-        line_number_just = max([
-            len(str(context.line_number + line_delta))
-            for context in self.contexts
-            for line_delta, line in context.lines
-        ] + [0])
-
-        for context_i, context in enumerate(self.contexts):
-
-
-
-            # Space between contexts.
-
-            if context_i:
-                with Indent(' ' * line_number_just + ' .'):
-                    log()
-                    log(ANSI('.' * 150, 'fg_bright_black'))
-                    log()
-
-
-
-            # Show the context.
-
-            log(' ' * line_number_just + ' |')
-
-            for line_delta, line in context.lines:
-
-                with ANSI('bold' if line_delta == 0 else None):
-
-
-
-                    # Show the line.
-
-                    line_number = context.line_number + line_delta
-
-                    log(
-                        '{} | {}',
-                        str(line_number).rjust(line_number_just),
-                        ANSI(line, 'bg_red' if line_delta == 0 else None),
-                        end = ''
-                    )
-
-
-
-                    # Show additional information on the line of interest.
-
-                    if line_delta == 0:
-
-                        with ANSI('fg_yellow'):
-
-                            log(f' <- {context.file_path} : {line_number}', end = '')
-
-                            if context.function_name is not None:
-                                log(f' : {context.function_name}', end = '')
-
-
-
-                    log()
-
-            log(' ' * line_number_just + ' |')
-
-        log()
-
-
-
-        # Log the underlying exception.
-
-        with ANSI('fg_red'):
-
-            match self.underlying_exception:
-
-
-
-                case SyntaxError():
-
-                    # Sometimes the syntax error message
-                    # will also mention a line number, but
-                    # it won't be correct. This is a minor
-                    # issue, though, so it's probably a no-fix.
-                    # e.g:
-                    # >
-                    # >    "[ERROR] closing parenthesis ')' does not match opening parenthesis '{' on line 10"
-                    # >
-
-                    with Indent('[ERROR] ', hanging = True):
-
-                        log(f'Syntax error.')
-
-                        if self.underlying_exception.filename == '<string>':
-                            log(
-                                f'This seems like a nested SyntaxError exception; '
-                                f'the error in the evaluated string might be on line {self.underlying_exception.lineno}.'
-                            )
-
-                        log(f'> {self.underlying_exception.args[0]}')
-
-
-
-                case NameError() | AttributeError() | ValueError():
-                    log(f'[ERROR] {self.underlying_exception}')
-
-
-
-                case AssertionError():
-                    if self.underlying_exception.args:
-                        log(f'[ERROR] {self.underlying_exception.args[0]}')
-                    else:
-                        log(f'[ERROR] Assertion failed.')
-
-
-
-                case KeyError():
-                    log(f'[ERROR] Got {type(self.underlying_exception).__name__}.')
-                    log(f'        > {self.underlying_exception}')
-
-
-
-                case _:
-                    log(f'[ERROR] Got {type(self.underlying_exception).__name__}.')
-                    if str(self.underlying_exception).strip():
-                        log(f'        > {self.underlying_exception}')
+import pathlib, types, contextlib, re, textwrap
+from ..pxd.utils import justify, deindent, c_repr, coalesce, OrderedSet
 
 
 
@@ -1124,12 +961,7 @@ def do(*,
 
 
 
-    ################################################################################
-    #
     # Find all meta-directives.
-    #
-
-
 
     meta_directives = []
 
@@ -1313,12 +1145,7 @@ def do(*,
 
 
 
-    ################################################################################
-    #
     # Ensure each meta-directive's include file path is unique.
-    #
-
-
 
     for include_file_path, conflicts in coalesce(
         (meta_directive.include_file_path, meta_directive)
@@ -1333,12 +1160,7 @@ def do(*,
 
 
 
-    ################################################################################
-    #
     # Ensure each meta-directive's exported and global identifiers are unique.
-    #
-
-
 
     for name, conflicts in coalesce(
         (identifier.name, meta_directive)
@@ -1354,12 +1176,7 @@ def do(*,
 
 
 
-    ################################################################################
-    #
     # Ensure each meta-directive import from an actual existing identifier.
-    #
-
-
 
     all_defined_identifier_names = [
         identifier.name
@@ -1380,12 +1197,7 @@ def do(*,
 
 
 
-    ################################################################################
-    #
     # Meta-directives with a bare header will implicitly import everything.
-    #
-
-
 
     for meta_directive in meta_directives:
 
@@ -1406,13 +1218,8 @@ def do(*,
 
 
 
-    ################################################################################
-    #
     # Meta-directives with global identifiers will have those identifiers be
     # implicitly imported into every other meta-directive without a global list.
-    #
-
-
 
     all_global_identifier_names = [
         identifier.name
@@ -1440,12 +1247,7 @@ def do(*,
 
 
 
-    ################################################################################
-    #
     # Sort the meta-directives.
-    #
-
-
 
     remaining_meta_directives  = meta_directives
     meta_directives            = []
@@ -1496,13 +1298,8 @@ def do(*,
 
 
 
-    ################################################################################
-    #
     # Create the top-level main function that'll
     # evaluate all of the meta-directives.
-    #
-
-
 
     meta_main_content = ''
 
@@ -1516,12 +1313,7 @@ def do(*,
 
 
 
-    ################################################################################
-    #
     # Create the meta-directive functions.
-    #
-
-
 
     for meta_directive_i, meta_directive in enumerate(meta_directives):
 
@@ -1577,13 +1369,8 @@ def do(*,
 
 
 
-    ################################################################################
-    #
     # Output the Python script of all meta-directives.
     # This is purely for debugging and diagnostics.
-    #
-
-
 
     meta_main_file_path = pathlib.Path(output_directory_path, '__meta_main__.py')
 
@@ -1593,13 +1380,8 @@ def do(*,
 
 
 
-    ################################################################################
-    #
     # Decorator to handle the initialization and
     # results of executing a meta-directive.
-    #
-
-
 
     defined_identifiers = {}
     Meta                = __META__()
@@ -1645,12 +1427,7 @@ def do(*,
 
 
 
-    ################################################################################
-    #
     # Begin evaluating the meta-directives.
-    #
-
-
 
     meta_main_globals = {}
 

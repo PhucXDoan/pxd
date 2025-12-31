@@ -31,7 +31,7 @@ if not (
 
 
 import types, builtins, collections, pathlib, re
-import logging, difflib, textwrap
+import logging, difflib
 import shlex, subprocess
 import contextlib
 import __main__
@@ -1172,12 +1172,111 @@ def c_repr(value):
 
 ################################################################################
 #
+# Routine to set the indentation of multi-lined text.
+#
+
+
+
+def deindent(
+    string,
+    *,
+    multilined_string_literal = True,
+    single_line_comment       = None,
+    indent                    = '',
+):
+
+
+
+    # For consistency, we preserve the newline style and
+    # whether or not the string ends with a newline.
+
+    lines = string.splitlines(keepends = True)
+
+
+
+    # By default, `deindent` will assume
+    # that `string` can be inputted like:
+    #
+    # >
+    # >    deindent('''
+    # >        ...
+    # >    ''')
+    # >
+    #
+    # This then means the first newline needs to be skipped.
+
+    if multilined_string_literal and lines and lines[0].strip() == '':
+        lines = lines[1:]
+
+
+
+    # Deindent each line of the string.
+
+    global_indent = None
+
+    for line in lines:
+
+
+
+        # We currently only support space indentation.
+
+        if line.lstrip(' ').startswith('\t'):
+            raise ValueError('Only spaces for indentation is allowed.')
+
+
+
+        # Count the leading spaces.
+
+        line_indent = len(line) - len(line.lstrip(' '))
+
+
+
+        # Comments shouldn't determine the indent level.
+
+        is_comment = (
+            single_line_comment is not None and
+            line.strip().startswith(single_line_comment)
+        )
+
+
+
+        # Determine if this line is of interest and
+        # has the minimum amount of indentation.
+
+        if not is_comment and line.strip():
+            if global_indent is None:
+                global_indent = line_indent
+            else:
+                global_indent = min(line_indent, global_indent)
+
+
+
+    # Deindent each line.
+
+    if global_indent is not None:
+
+        lines = (
+            ('' if line.strip() == '' else indent) +
+            line.removeprefix(' ' * min(len(line) - len(line.lstrip(' ')), global_indent))
+            for line in lines
+        )
+
+
+
+    # Rejoining the lines while preserving the newlines.
+
+    return ''.join(lines)
+
+
+
+################################################################################
+#
 # Meta-preprocessor.
 #
 
 
 
-from ..pxd.utils import deindent, OrderedSet # TODO Remove.
+from ..pxd.utils import OrderedSet # TODO Remove.
 
 
 
@@ -1534,8 +1633,8 @@ def metapreprocess(*,
 
     meta_main_content = ''
 
-    meta_main_content += textwrap.dedent(
-        '''\
+    meta_main_content += deindent(
+        '''
                 def __META_MAIN__(__META_DIRECTIVE__):
                     pass
 
@@ -1579,23 +1678,23 @@ def metapreprocess(*,
 
         # Make the meta-directive function that'll be executed by the decorator.
 
-        meta_main_content += textwrap.indent(textwrap.dedent(
-            f'''\
+        meta_main_content += deindent(
+            f'''
                     @__META_DIRECTIVE__({meta_directive_i})
                     def _({', '.join(parameters)}):
 
                         global {', '.join(identifiers_to_be_defined)}
 
             '''
-        ), ' ' * 4)
+        , indent = ' ' * 4)
 
 
 
         # Insert the code for the meta-directive.
 
-        meta_main_content += textwrap.indent(
+        meta_main_content += deindent(
             '\n'.join(meta_directive.body_lines) + '\n',
-            ' ' * 8
+            indent = ' ' * 8,
         )
 
 

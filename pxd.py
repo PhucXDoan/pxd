@@ -30,9 +30,10 @@ if not (
 
 
 
-import types, builtins, collections, pathlib
-import logging, difflib
+import types, builtins, collections, pathlib, re
+import logging, difflib, textwrap
 import shlex, subprocess
+import contextlib
 import __main__
 
 
@@ -1154,13 +1155,29 @@ class CommandLineInterface:
 
 ################################################################################
 #
+# Routine to convert Python values into something C-like.
+#
+
+
+
+def c_repr(value):
+
+    match value:
+        case bool  () : return str(value).lower()
+        case float () : return str(int(value) if value.is_integer() else value)
+        case None     : return 'none'
+        case _        : return str(value)
+
+
+
+################################################################################
+#
 # Meta-preprocessor.
 #
 
 
 
-import pathlib, types, contextlib, re, textwrap # TODO Remove.
-from ..pxd.utils import deindent, c_repr, OrderedSet # TODO Remove.
+from ..pxd.utils import deindent, OrderedSet # TODO Remove.
 
 
 

@@ -36,19 +36,6 @@ def find_dupe(values):
 
 
 
-def c_repr(value):
-    match value:
-        case bool  () : return str(value).lower()
-        case float () : return str(int(value) if value.is_integer() else value)
-        case None     : return 'none'
-        case _        : return str(value)
-
-
-
-################################################################################################################################
-
-
-
 def deindent(string, *, multilined_string_literal = True, single_line_comment = None):
 
 

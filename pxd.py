@@ -30,7 +30,10 @@ if not (
 
 
 
-import shlex, subprocess, logging, types, difflib, builtins, pathlib, __main__, collections
+import types, builtins, collections, pathlib
+import logging, difflib
+import shlex, subprocess
+import __main__
 
 
 
@@ -41,21 +44,20 @@ import shlex, subprocess, logging, types, difflib, builtins, pathlib, __main__, 
 
 
 
-def coalesce(items):
+def coalesce(key_value_pairs):
 
-    result = collections.defaultdict(lambda: [])
+    pool = collections.defaultdict(lambda: [])
 
-    for key, value in items:
-        result[key] += [value]
+    for key, value in key_value_pairs:
+        pool[key] += [value]
 
-    return tuple((key, tuple(values)) for key, values in result.items())
+    return tuple(pool.items())
 
 
 
 ################################################################################
 #
 # Routine to justify columns of values.
-# TODO Clean up.
 #
 
 
@@ -66,57 +68,22 @@ def justify(rows):
 
 
 
-    # We will be justifying multiple columns.
-    # > e.g:
-    # >
-    # >    for person, just_name, just_age in justify(
-    # >        (
-    # >            (None, person     ),
-    # >            ('<' , person.name),
-    # >            ('<' , person.age ),
-    # >        )
-    # >        for person in persons
-    # >    ):
-    # >        ...
-    # >
-
-    if all(
-        isinstance(cell, tuple) or isinstance(cell, list)
-        for row  in rows
-        for cell in row
-    ):
-        single_column = False
-
-
-
-    # We will be justifying only one column.
-    # We will go through the same procedure as a multi-column justification
-    # but the yielded value will be unpacked automatically for the user;
-    # this just removes the usage of commas and parentheses a lot.
-    # > e.g:
-    # >
-    # >    for just_name in justify(('<', person.name) for person in persons):
-    # >        ...
-    # >
-    else:
-        single_column = True
-        rows          = tuple((row,) for row in rows)
-
-
-
     # Determine the amount of justification needed for each column.
 
     column_max_lengths = {
-        column_i : max([0] + [
-            len(str(cell_value))
-            for cell_justification, cell_value in cells
-            if cell_justification is not None # We will leave cells that have justification of `None` untouched.
-        ])
+
+        column_i : max([
+            len(str(value))
+            for justification, value in cells
+            if justification is not None
+        ] or [0])
+
         for column_i, cells in coalesce(
             (column_i, cell)
             for row in rows
             for column_i, cell in enumerate(row)
         )
+
     }
 
 
@@ -129,23 +96,18 @@ def justify(rows):
 
         just_row = []
 
-        for column_i, (cell_justification, cell_value) in enumerate(row):
+        for column_i, (justification, value) in enumerate(row):
 
-            match cell_justification:
-                case None : just_row += [    cell_value                                      ]
-                case '<'  : just_row += [str(cell_value).ljust (column_max_lengths[column_i])]
-                case '>'  : just_row += [str(cell_value).rjust (column_max_lengths[column_i])]
-                case '^'  : just_row += [str(cell_value).center(column_max_lengths[column_i])]
-                case _    : raise ValueError(f'Unknown justification: {repr(cell_justification)}.')
-
-        if single_column:
-            just_row, = just_row # Automatically unpack in the case of a single column.
-        else:
-            just_row = tuple(just_row)
+            match justification:
+                case None : just_row += [    value                                      ]
+                case '<'  : just_row += [str(value).ljust (column_max_lengths[column_i])]
+                case '>'  : just_row += [str(value).rjust (column_max_lengths[column_i])]
+                case '^'  : just_row += [str(value).center(column_max_lengths[column_i])]
+                case _    : raise ValueError(f'Unknown justification: {repr(justification)}.')
 
         just_rows += [just_row]
 
-    return tuple(just_rows)
+    return just_rows
 
 
 
@@ -245,6 +207,7 @@ logger.setLevel(logging.DEBUG)
 
 
 def make_main_relative_path(*parts):
+
     return (
         pathlib.Path(__main__.__file__)
             .parent

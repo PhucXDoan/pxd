@@ -219,11 +219,11 @@ class MainFormatter(logging.Formatter):
 
 
 
-logger         = logging.getLogger(__name__)
-logger_handler = logging.StreamHandler(sys.stdout)
-logger_handler.setFormatter(MainFormatter())
-logger.addHandler(logger_handler)
-logger.setLevel(logging.DEBUG)
+pxd_logger         = logging.getLogger(__name__)
+pxd_logger_handler = logging.StreamHandler(sys.stdout)
+pxd_logger_handler.setFormatter(MainFormatter())
+pxd_logger.addHandler(pxd_logger_handler)
+pxd_logger.setLevel(logging.DEBUG)
 
 
 
@@ -293,6 +293,7 @@ def execute_shell_command(
     bash       = None,
     cmd        = None,
     powershell = None,
+    logger     = pxd_logger,
 ):
 
 
@@ -349,7 +350,8 @@ def execute_shell_command(
 
         command = ' '.join(command)
 
-        logger.info(f'$ {command}')
+        if logger:
+            logger.info(f'$ {command}')
 
         if use_powershell:
 
@@ -434,7 +436,7 @@ class CommandLineInterface:
                 elapsed = end - start
 
                 if elapsed >= 0.5:
-                    logger.debug(f'"{verb.name}" took {elapsed :.3f}s.')
+                    self.logger.debug(f'"{verb.name}" took {elapsed :.3f}s.')
 
             hook = default_hook
 
@@ -1308,6 +1310,7 @@ def metapreprocess(*,
     output_directory_path,
     source_file_paths,
     callback = None,
+    logger   = pxd_logger,
 ):
 
     output_directory_path = pathlib.Path(output_directory_path)

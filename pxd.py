@@ -1306,6 +1306,11 @@ def SimpleNamespaceTable(header, *entries):
 
 
 
+class MetaPreprocessError(Exception):
+    pass
+
+
+
 def metapreprocess(*,
     output_directory_path,
     source_file_paths,
@@ -1313,8 +1318,15 @@ def metapreprocess(*,
     logger   = pxd_logger,
 ):
 
+
+
+    # Process the parameters.
+
     output_directory_path = pathlib.Path(output_directory_path)
-    source_file_paths     = tuple(map(pathlib.Path, source_file_paths))
+    source_file_paths     = [
+        pathlib.Path(source_file_path)
+        for source_file_path in source_file_paths
+    ]
 
 
 
@@ -1398,10 +1410,7 @@ def metapreprocess(*,
 
                     case [kind, *identifiers] if kind in ('export', 'import', 'global'):
 
-                        if not identifiers:
-                            raise NotImplementedError
-
-                        identifiers, = identifiers
+                        identifiers, = identifiers or ['']
                         identifiers  = [
                             types.SimpleNamespace(
                                 kind        = kind,
@@ -1411,6 +1420,18 @@ def metapreprocess(*,
                             for identifier in identifiers.split(',')
                             if identifier.strip()
                         ]
+
+
+
+                        # Ensure there's actually any identifiers.
+
+                        if not identifiers:
+
+                            logger.error(
+                                f'At least one identifier needs to be listed after {repr(kind)}.'
+                            )
+
+                            raise MetaPreprocessError
 
 
 

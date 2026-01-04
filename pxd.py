@@ -34,6 +34,7 @@ import types, builtins, collections, pathlib, re, string
 import logging, difflib
 import shlex, subprocess
 import contextlib
+import ast
 import __main__
 
 
@@ -2030,7 +2031,42 @@ def metapreprocess(*,
 
 
 
-    # TODO.
+    # Parse each meta-directive individually
+    # to catch any syntax errors.
+
+    for meta_directive in meta_directives:
+
+        try:
+
+            compile(
+                '\n'.join(meta_directive.body_lines),
+                filename = (filename := '__META_DIRECTIVE_PARSE__'),
+                mode     = 'exec',
+                flags    = ast.PyCF_ONLY_AST,
+            )
+
+        except SyntaxError as error:
+
+            if error.filename != filename:
+                raise
+
+            logger.error(
+                f'Syntax error: {repr(error.msg)}.',
+                extra = {
+                    'frames' : (
+                        types.SimpleNamespace(
+                            source_file_path = meta_directive.source_file_path,
+                            line_number      = meta_directive.body_line_number + error.lineno,
+                        ),
+                    )
+                },
+            )
+
+            raise MetaPreprocessError from error
+
+
+
+    # Helper class that makes code generation easy and look nice.
 
     class Meta:
 
@@ -2658,7 +2694,7 @@ def metapreprocess(*,
 
 
 
-            # TODO
+            # If the meta-directive generates code, we output that code now.
 
             if Meta.meta_directive.include_file_path is not None:
 

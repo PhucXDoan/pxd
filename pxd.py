@@ -2028,7 +2028,7 @@ def metapreprocess(*,
 
     meta_main_content = '\n'.join(meta_main_lines) + '\n'
 
-    meta_main_file_path = pathlib.Path(output_directory_path, '__meta_main__.py')
+    meta_main_file_path = pathlib.Path(output_directory_path, '__META_MAIN__.py')
 
     meta_main_file_path.parent.mkdir(parents = True, exist_ok = True)
 

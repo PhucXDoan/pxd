@@ -2692,6 +2692,26 @@ def metapreprocess(*,
 
 
 
+            # Start of the callback.
+
+            if callback is None:
+
+                callback_iterator = None
+
+            else:
+
+                callback_iterator = callback(meta_directives, meta_directive_i)
+
+                if not isinstance(callback_iterator, types.GeneratorType):
+                    raise RuntimeError('Meta-directive callback must be a generator.')
+
+                try:
+                    next(callback_iterator)
+                except StopIteration:
+                    raise RuntimeError('Meta-directive callback did not yield.')
+
+
+
             # Evaluate the meta-directive where the function's
             # global namespace will be inspected later on.
 
@@ -2777,6 +2797,21 @@ def metapreprocess(*,
                 )
 
                 raise MetaPreprocessorError from error
+
+
+
+            # End of callback.
+
+            if callback is not None:
+
+                try:
+                    next(callback_iterator)
+                    stopped = False
+                except StopIteration:
+                    stopped = True
+
+                if not stopped:
+                    raise RuntimeError('Meta-directive callback did not return.')
 
 
 

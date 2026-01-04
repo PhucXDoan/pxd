@@ -2770,7 +2770,7 @@ def metapreprocess(*,
                 # the stack frames leading to the exception.
 
                 logger.error(
-                    f'Exception raised: {repr(str(error))}.',
+                    f'Exception {repr(error.__class__.__name__)} raised: {repr(str(error))}.',
                     extra = {
                         'frames' : frames
                     },

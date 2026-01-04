@@ -2745,6 +2745,15 @@ def metapreprocess(*,
 
 
 
+                    # The meta-directive at some point invoked `eval` or `exec`.
+                    # There's not much we can do here to provide useful stack information.
+
+                    elif trace.filename == '<string>':
+
+                        pass
+
+
+
                     # The traceback is in some other Python file,
                     # so we just grab that.
 

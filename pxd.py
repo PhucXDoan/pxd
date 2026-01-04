@@ -34,7 +34,7 @@ import types, builtins, collections, pathlib, re, string
 import logging, difflib
 import shlex, subprocess
 import contextlib
-import ast
+import ast, traceback
 import __main__
 
 
@@ -1476,6 +1476,7 @@ def metapreprocess(*,
                 identifiers              = [],
                 body_line_number         = None,
                 body_lines               = [],
+                meta_main_line_number    = None,
             )
 
 
@@ -1952,15 +1953,15 @@ def metapreprocess(*,
     # Create the top-level main function that'll
     # evaluate all of the meta-directives.
 
-    meta_main_content = ''
+    meta_main_lines = []
 
-    meta_main_content += deindent(
+    meta_main_lines += deindent(
         '''
-                def __META_MAIN__(__META_DIRECTIVE__):
+                def __META_MAIN_FUNCTION__(__META_DIRECTIVE_DECORATOR__):
                     pass
 
         '''
-    )
+    ).splitlines()
 
 
 
@@ -1999,29 +2000,33 @@ def metapreprocess(*,
 
         # Make the meta-directive function that'll be executed by the decorator.
 
-        meta_main_content += deindent(
+        meta_main_lines += deindent(
             f'''
-                    @__META_DIRECTIVE__({meta_directive_i})
-                    def _({', '.join(parameters)}):
+                    @__META_DIRECTIVE_DECORATOR__({meta_directive_i})
+                    def __META_DIRECTIVE_FUNCTION__({', '.join(parameters)}):
 
                         global {', '.join(identifiers_to_be_defined)}
 
             '''
-        , indent = ' ' * 4)
+        , indent = ' ' * 4).splitlines()
 
 
 
         # Insert the code for the meta-directive.
 
-        meta_main_content += deindent(
+        meta_directive.meta_main_line_number = len(meta_main_lines) + 1
+
+        meta_main_lines += deindent(
             '\n'.join(meta_directive.body_lines) + '\n',
             indent = ' ' * 8,
-        )
+        ).splitlines()
 
 
 
     # Output the Python script of all meta-directives.
     # This is purely for debugging and diagnostics.
+
+    meta_main_content = '\n'.join(meta_main_lines) + '\n'
 
     meta_main_file_path = pathlib.Path(output_directory_path, '__meta_main__.py')
 
@@ -2654,7 +2659,7 @@ def metapreprocess(*,
 
     defined_identifiers = {}
 
-    def __META_DIRECTIVE__(meta_directive_i):
+    def __META_DIRECTIVE_DECORATOR__(meta_directive_i):
 
         def decorator(function):
 
@@ -2690,7 +2695,79 @@ def metapreprocess(*,
             # Evaluate the meta-directive where the function's
             # global namespace will be inspected later on.
 
-            types.FunctionType(function.__code__, function_globals)(**parameters)
+            try:
+
+                types.FunctionType(function.__code__, function_globals)(**parameters)
+
+
+
+            # Handle any run-time errors due to the meta-directive.
+
+            except Exception as error:
+
+
+
+                # Look at the stack frames from when
+                # we began to evaluate the meta-directive.
+
+                traces = traceback.extract_tb(sys.exc_info()[2])
+
+                while traces and traces[0].name != '__META_DIRECTIVE_FUNCTION__':
+                    del traces[0]
+
+
+
+                # For each layer of the stack leading to the line that
+                # caused the exception, we determine the file and line number.
+
+                frames = []
+
+                for trace in traces:
+
+
+
+                    # The traceback is in one of the meta-directives, so
+                    # we determine the corresponding meta-directive
+                    # and calculate the offending line number.
+
+                    if trace.filename == '__META_MAIN_FILE__':
+
+                        (body_line_index, meta_directive), *_ = sorted(
+                            (trace.lineno - meta_directive.meta_main_line_number, meta_directive)
+                            for meta_directive in meta_directives
+                            if trace.lineno >= meta_directive.meta_main_line_number
+                        )
+
+                        frames += [types.SimpleNamespace(
+                            source_file_path = meta_directive.source_file_path,
+                            line_number      = meta_directive.body_line_number + body_line_index + 1
+                        )]
+
+
+
+                    # The traceback is in some other Python file,
+                    # so we just grab that.
+
+                    else:
+
+                        frames += [types.SimpleNamespace(
+                            source_file_path = pathlib.Path(trace.filename),
+                            line_number      = trace.lineno
+                        )]
+
+
+
+                # Provide the nice diagnostic to show
+                # the stack frames leading to the exception.
+
+                logger.error(
+                    f'Exception raised: {repr(str(error))}.',
+                    extra = {
+                        'frames' : frames
+                    },
+                )
+
+                raise MetaPreprocessError from error
 
 
 
@@ -2791,9 +2868,9 @@ def metapreprocess(*,
 
     meta_main_globals = {}
 
-    exec(meta_main_content, {}, meta_main_globals)
+    exec(compile(meta_main_content, '__META_MAIN_FILE__', 'exec'), {}, meta_main_globals)
 
-    meta_main_globals['__META_MAIN__'](__META_DIRECTIVE__)
+    meta_main_globals['__META_MAIN_FUNCTION__'](__META_DIRECTIVE_DECORATOR__)
 
 
 

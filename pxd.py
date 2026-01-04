@@ -1508,25 +1508,20 @@ def metapreprocess(*,
 
 
 
-                # Pop the next line.
-
-                current_line, *remaining_lines = remaining_lines
-
-
-
-                # See if the line is part of a meta-directive's header.
+                # See if the next line is part of a meta-directive's header.
 
                 meta_match = re.match(
                     r'\s*#\s*meta\b\s*(.*)' if source_file_path.suffix == '.py' else
                     r'\s*/\*\s*#\s*meta\b\s*(.*)',
-                    current_line
+                    remaining_lines[0]
                 )
 
                 if not meta_match:
                     break
 
-                if not meta_directive_found:
+                remaining_lines = remaining_lines[1:]
 
+                if not meta_directive_found:
                     meta_directive_found                    = True
                     meta_directive.first_header_line_number = total_lines - len(remaining_lines)
 
@@ -1654,13 +1649,14 @@ def metapreprocess(*,
 
 
             if not meta_directive_found:
+                remaining_lines = remaining_lines[1:]
                 continue
 
 
 
             # We now get the body of the meta-directive.
 
-            meta_directive.body_line_number = total_lines - len(remaining_lines)
+            meta_directive.body_line_number = total_lines - len(remaining_lines) + 1
             meta_directive.body_lines       = []
 
             if source_file_path.suffix == '.py':
@@ -2061,7 +2057,7 @@ def metapreprocess(*,
                     'frames' : (
                         types.SimpleNamespace(
                             source_file_path = meta_directive.source_file_path,
-                            line_number      = meta_directive.body_line_number + error.lineno,
+                            line_number      = meta_directive.body_line_number + error.lineno - 1,
                         ),
                     )
                 },

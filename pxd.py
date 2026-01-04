@@ -2071,7 +2071,6 @@ def metapreprocess(*,
 
     class Meta:
 
-        meta_directive = meta_directives[meta_directive_i]
         output         = ''
         indent         = 0
         within_macro   = False

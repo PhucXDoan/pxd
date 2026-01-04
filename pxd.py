@@ -1375,14 +1375,16 @@ def metapreprocess(*,
                 # the issue.
 
                 frame_lines = []
+                gutter      = ''
+
+                for frame in record.frames:
+                    CONTEXT_MARGIN          = 3
+                    frame.source_file_lines = frame.source_file_path.read_text().splitlines()
+                    frame.minimum_index     = max(frame.line_number - 1 - CONTEXT_MARGIN, 0)
+                    frame.maximum_index     = min(frame.line_number - 1 + CONTEXT_MARGIN, len(frame.source_file_lines) - 1)
+                    gutter                  = ' ' * max(len(gutter), len(repr(frame.maximum_index + 1)))
 
                 for frame_i, frame in enumerate(record.frames):
-
-                    source_file_lines = frame.source_file_path.read_text().splitlines()
-                    CONTEXT_MARGIN    = 3
-                    minimum_index     = max(frame.line_number - 1 - CONTEXT_MARGIN, 0)
-                    maximum_index     = min(frame.line_number - 1 + CONTEXT_MARGIN, len(source_file_lines) - 1)
-                    gutter            = ' ' * len(repr(maximum_index + 1))
 
 
 
@@ -1406,14 +1408,14 @@ def metapreprocess(*,
 
                     # Grab some lines from the source code near the error.
 
-                    for source_line_index in range(minimum_index, maximum_index + 1):
+                    for source_line_index in range(frame.minimum_index, frame.maximum_index + 1):
 
                         frame_line = f'{repr(source_line_index + 1).rjust(len(gutter))} | '
 
                         if source_line_index + 1 == frame.line_number:
                             frame_line += ANSI_BG_RED + ANSI_BOLD
 
-                        frame_line += source_file_lines[source_line_index]
+                        frame_line += frame.source_file_lines[source_line_index]
 
                         if source_line_index + 1 == frame.line_number:
                             frame_line += ANSI_RESET

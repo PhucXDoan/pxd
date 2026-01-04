@@ -1341,7 +1341,7 @@ class MetaPreprocessorError(Exception):
 def metapreprocess(*,
     output_directory_path,
     source_file_paths,
-    callback = None,
+    callback = ...,
     logger   = ...,
 ):
 
@@ -1354,6 +1354,10 @@ def metapreprocess(*,
         pathlib.Path(source_file_path)
         for source_file_path in source_file_paths
     ]
+
+
+
+    # Provide the default logger that'll give good diagnostics.
 
     if logger is ...:
 
@@ -1375,71 +1379,73 @@ def metapreprocess(*,
                 # the locations of the lines that are causing
                 # the issue.
 
-                frame_lines = []
-                gutter      = ''
+                if hasattr(record, 'frames'):
 
-                for frame in record.frames:
-                    CONTEXT_MARGIN          = 3
-                    frame.source_file_lines = frame.source_file_path.read_text().splitlines()
-                    frame.minimum_index     = max(frame.line_number - 1 - CONTEXT_MARGIN, 0)
-                    frame.maximum_index     = min(frame.line_number - 1 + CONTEXT_MARGIN, len(frame.source_file_lines) - 1)
-                    gutter                  = ' ' * max(len(gutter), len(repr(frame.maximum_index + 1)))
+                    frame_lines = []
+                    gutter      = ''
 
-                for frame_i, frame in enumerate(record.frames):
+                    for frame in record.frames:
+                        CONTEXT_MARGIN          = 3
+                        frame.source_file_lines = frame.source_file_path.read_text().splitlines()
+                        frame.minimum_index     = max(frame.line_number - 1 - CONTEXT_MARGIN, 0)
+                        frame.maximum_index     = min(frame.line_number - 1 + CONTEXT_MARGIN, len(frame.source_file_lines) - 1)
+                        gutter                  = ' ' * max(len(gutter), len(repr(frame.maximum_index + 1)))
 
-
-
-                    # Small margin to give breathing room.
-
-                    if frame_i == 0:
-                        frame_lines += [f'{gutter} |']
+                    for frame_i, frame in enumerate(record.frames):
 
 
 
-                    # Have a little divider to show separate frame contexts.
+                        # Small margin to give breathing room.
 
-                    else:
-                        frame_lines += [
-                            f'{gutter} :',
-                            f'{gutter} : {ANSI_FG_BRIGHT_BLACK}{'.' * 80}{ANSI_RESET}',
-                            f'{gutter} :',
-                        ]
+                        if frame_i == 0:
+                            frame_lines += [f'{gutter} |']
 
 
 
-                    # Grab some lines from the source code near the error.
+                        # Have a little divider to show separate frame contexts.
 
-                    for source_line_index in range(frame.minimum_index, frame.maximum_index + 1):
-
-                        frame_line = f'{repr(source_line_index + 1).rjust(len(gutter))} | '
-
-                        if source_line_index + 1 == frame.line_number:
-                            frame_line += ANSI_BG_RED + ANSI_BOLD
-
-                        frame_line += frame.source_file_lines[source_line_index]
-
-                        if source_line_index + 1 == frame.line_number:
-                            frame_line += ANSI_RESET
-                            frame_line += ANSI_FG_BRIGHT_YELLOW
-                            frame_line += f' <- {frame.source_file_path.as_posix()} : {frame.line_number}'
-                            frame_line += ANSI_RESET
-
-                        frame_lines += [frame_line]
+                        else:
+                            frame_lines += [
+                                f'{gutter} :',
+                                f'{gutter} : {ANSI_FG_BRIGHT_BLACK}{'.' * 80}{ANSI_RESET}',
+                                f'{gutter} :',
+                            ]
 
 
 
-                    # Last frame, so insert some breathing room.
+                        # Grab some lines from the source code near the error.
 
-                    if frame_i == len(record.frames) - 1:
+                        for source_line_index in range(frame.minimum_index, frame.maximum_index + 1):
 
-                        frame_lines += [f'{gutter} |']
+                            frame_line = f'{repr(source_line_index + 1).rjust(len(gutter))} | '
+
+                            if source_line_index + 1 == frame.line_number:
+                                frame_line += ANSI_BG_RED + ANSI_BOLD
+
+                            frame_line += frame.source_file_lines[source_line_index]
+
+                            if source_line_index + 1 == frame.line_number:
+                                frame_line += ANSI_RESET
+                                frame_line += ANSI_FG_BRIGHT_YELLOW
+                                frame_line += f' <- {frame.source_file_path.as_posix()} : {frame.line_number}'
+                                frame_line += ANSI_RESET
+
+                            frame_lines += [frame_line]
 
 
 
-                # Put all the selected lines together
-                # to have a nice diagnostic.
+                        # Last frame, so insert some breathing room.
 
-                message = '\n'.join(frame_lines) + ('\n' * 2) + message
+                        if frame_i == len(record.frames) - 1:
+
+                            frame_lines += [f'{gutter} |']
+
+
+
+                    # Put all the selected lines together
+                    # to have a nice diagnostic.
+
+                    message = '\n'.join(frame_lines) + ('\n' * 2) + message
 
 
 
@@ -1454,6 +1460,43 @@ def metapreprocess(*,
         logger_handler.setFormatter(MetaPreprocessorFormatter())
         logger.addHandler(logger_handler)
         logger.setLevel(logging.DEBUG)
+
+
+
+    # Provide the default callback that'll give timing metrics.
+
+    elapsed               = 0
+    meta_directive_deltas = []
+
+    def default_callback(meta_directives, meta_directive_i):
+
+        nonlocal elapsed, meta_directive_deltas
+
+        meta_directive = meta_directives[meta_directive_i]
+
+
+
+        # Log the evaluation of the meta-directive.
+
+        location = f'{meta_directive.source_file_path.as_posix()}:{meta_directive.first_header_line_number}'
+
+        logger.info(f'Meta-preprocessing {location}')
+
+
+
+        # Record how long it takes to run this meta-directive.
+
+        start                  = time.time()
+        output                 = yield
+        end                    = time.time()
+        delta                  = end - start
+        meta_directive_deltas += [(location, delta)]
+        elapsed               += delta
+
+
+
+    if callback is ...:
+        callback = default_callback
 
 
 
@@ -2910,6 +2953,22 @@ def metapreprocess(*,
     exec(compile(meta_main_content, '__META_MAIN_FILE__', 'exec'), {}, meta_main_globals)
 
     meta_main_globals['__META_MAIN_FUNCTION__'](__META_DIRECTIVE_DECORATOR__)
+
+
+
+    # Log the performance of the meta-preprocessor.
+
+    if callback == default_callback:
+
+        logger.debug(
+            f'Meta-preprocessing {len(meta_directive_deltas)} meta-directives took {elapsed :.3f}s.',
+            extra = {
+                'table' : [
+                    (location, f'{delta :.3f}s | {delta / elapsed * 100 : 5.1f}%')
+                    for location, delta in sorted(meta_directive_deltas, key = lambda x: -x[1])
+                ]
+            }
+        )
 
 
 

@@ -1333,7 +1333,7 @@ def SimpleNamespaceTable(header, *entries):
 
 
 
-class MetaPreprocessError(Exception):
+class MetaPreprocessorError(Exception):
     pass
 
 
@@ -1571,7 +1571,7 @@ def metapreprocess(*,
                                 },
                             )
 
-                            raise MetaPreprocessError
+                            raise MetaPreprocessorError
 
 
 
@@ -1595,7 +1595,7 @@ def metapreprocess(*,
                                 },
                             )
 
-                            raise MetaPreprocessError
+                            raise MetaPreprocessorError
 
 
 
@@ -1619,7 +1619,7 @@ def metapreprocess(*,
                                 },
                             )
 
-                            raise MetaPreprocessError
+                            raise MetaPreprocessorError
 
 
 
@@ -1649,7 +1649,7 @@ def metapreprocess(*,
                             },
                         )
 
-                        raise MetaPreprocessError
+                        raise MetaPreprocessorError
 
 
 
@@ -1686,7 +1686,7 @@ def metapreprocess(*,
                             },
                         )
 
-                        raise MetaPreprocessError
+                        raise MetaPreprocessorError
 
                     body_line, *remaining_lines = remaining_lines
 
@@ -1731,7 +1731,7 @@ def metapreprocess(*,
                     },
                 )
 
-                raise MetaPreprocessError
+                raise MetaPreprocessorError
 
 
 
@@ -1763,7 +1763,7 @@ def metapreprocess(*,
             },
         )
 
-        raise MetaPreprocessError
+        raise MetaPreprocessorError
 
 
 
@@ -1792,7 +1792,7 @@ def metapreprocess(*,
             },
         )
 
-        raise MetaPreprocessError
+        raise MetaPreprocessorError
 
 
 
@@ -1830,7 +1830,7 @@ def metapreprocess(*,
                     },
                 )
 
-                raise MetaPreprocessError
+                raise MetaPreprocessorError
 
 
 
@@ -1946,7 +1946,7 @@ def metapreprocess(*,
                 },
             )
 
-            raise MetaPreprocessError
+            raise MetaPreprocessorError
 
 
 
@@ -2067,7 +2067,7 @@ def metapreprocess(*,
                 },
             )
 
-            raise MetaPreprocessError from error
+            raise MetaPreprocessorError from error
 
 
 
@@ -2776,7 +2776,7 @@ def metapreprocess(*,
                     },
                 )
 
-                raise MetaPreprocessError from error
+                raise MetaPreprocessorError from error
 
 
 
@@ -2858,7 +2858,7 @@ def metapreprocess(*,
                     },
                 )
 
-                raise MetaPreprocessError
+                raise MetaPreprocessorError
 
 
 

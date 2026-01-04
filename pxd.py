@@ -1341,7 +1341,7 @@ def metapreprocess(*,
     output_directory_path,
     source_file_paths,
     callback = None,
-    logger   = pxd_logger,
+    logger   = ...,
 ):
 
 
@@ -1353,6 +1353,104 @@ def metapreprocess(*,
         pathlib.Path(source_file_path)
         for source_file_path in source_file_paths
     ]
+
+    if logger is ...:
+
+        class MetaPreprocessorFormatter(logging.Formatter):
+
+            def format(self, record):
+
+
+
+                # Some basic, common formattings.
+
+                message = super().format(record)
+                message = append_log_table(message, record)
+                message = prepend_log_level(message, record)
+
+
+
+                # To give good error messages, we'll display
+                # the locations of the lines that are causing
+                # the issue.
+
+                frame_lines = []
+
+                for frame_i, frame in enumerate(record.frames):
+
+                    source_file_lines = frame.source_file_path.read_text().splitlines()
+                    CONTEXT_MARGIN    = 3
+                    minimum_index     = max(frame.line_number - 1 - CONTEXT_MARGIN, 0)
+                    maximum_index     = min(frame.line_number - 1 + CONTEXT_MARGIN, len(source_file_lines) - 1)
+                    gutter            = ' ' * len(repr(maximum_index + 1))
+
+
+
+                    # Small margin to give breathing room.
+
+                    if frame_i == 0:
+                        frame_lines += [f'{gutter} |']
+
+
+
+                    # Have a little divider to show separate frame contexts.
+
+                    else:
+                        frame_lines += [
+                            f'{gutter} :',
+                            f'{gutter} : {ANSI_FG_BRIGHT_BLACK}{'.' * 80}{ANSI_RESET}',
+                            f'{gutter} :',
+                        ]
+
+
+
+                    # Grab some lines from the source code near the error.
+
+                    for source_line_index in range(minimum_index, maximum_index + 1):
+
+                        frame_line = f'{repr(source_line_index + 1).rjust(len(gutter))} | '
+
+                        if source_line_index + 1 == frame.line_number:
+                            frame_line += ANSI_BG_RED + ANSI_BOLD
+
+                        frame_line += source_file_lines[source_line_index]
+
+                        if source_line_index + 1 == frame.line_number:
+                            frame_line += ANSI_RESET
+                            frame_line += ANSI_FG_BRIGHT_YELLOW
+                            frame_line += f' <- {frame.source_file_path.as_posix()} : {frame.line_number}'
+                            frame_line += ANSI_RESET
+
+                        frame_lines += [frame_line]
+
+
+
+                    # Last frame, so insert some breathing room.
+
+                    if frame_i == len(record.frames) - 1:
+
+                        frame_lines += [f'{gutter} |']
+
+
+
+                # Put all the selected lines together
+                # to have a nice diagnostic.
+
+                message = '\n'.join(frame_lines) + ('\n' * 2) + message
+
+
+
+                message += '\n'
+
+                return message
+
+
+
+        logger         = logging.getLogger('pxd_MetaPreprocessor')
+        logger_handler = logging.StreamHandler(sys.stdout)
+        logger_handler.setFormatter(MetaPreprocessorFormatter())
+        logger.addHandler(logger_handler)
+        logger.setLevel(logging.DEBUG)
 
 
 
@@ -1454,7 +1552,15 @@ def metapreprocess(*,
                         if not identifiers:
 
                             logger.error(
-                                f'At least one identifier needs to be listed after {repr(kind)}.'
+                                f'At least one identifier needs to be listed after {repr(kind)}.',
+                                extra = {
+                                    'frames' : (
+                                        types.SimpleNamespace(
+                                            source_file_path = source_file_path,
+                                            line_number      = total_lines - len(remaining_lines),
+                                        ),
+                                    ),
+                                },
                             )
 
                             raise MetaPreprocessError

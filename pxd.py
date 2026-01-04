@@ -143,7 +143,60 @@ ANSI_BG_WHITE    = '\x1B[47m'
 
 ################################################################################
 #
-# Logger configuration.
+# Routine to add a jutsified table to a log message.
+#
+
+
+def append_log_table(message, record):
+
+    if hasattr(record, 'table'):
+
+        for just_key, just_value in justify([
+            (
+                ('<' , str(key  )),
+                (None, str(value)),
+            )
+            for key, value in record.table
+        ]):
+            message += f'\n{just_key} : {just_value}'
+
+    return message
+
+
+
+################################################################################
+#
+# Routine to format a log to indicate its severity.
+#
+
+
+
+def prepend_log_level(message, record):
+
+    indent = ' ' * len(f'[{record.levelname}] ')
+
+    message = '\n'.join([
+        message.splitlines()[0],
+        *[f'{indent}{line}' for line in message.splitlines()[1:]]
+    ])
+
+    coloring = {
+        'DEBUG'    : ANSI_FG_MAGENTA,
+        'INFO'     : ANSI_FG_CYAN,
+        'WARNING'  : ANSI_FG_YELLOW,
+        'ERROR'    : ANSI_FG_RED,
+        'CRITICAL' : ANSI_FG_RED + ANSI_BOLD,
+    }[record.levelname]
+
+    message = f'{ANSI_RESET}{coloring}[{record.levelname}]{ANSI_RESET} {message}'
+
+    return message
+
+
+
+################################################################################
+#
+# Top-level default logger.
 #
 
 
@@ -152,68 +205,10 @@ class MainFormatter(logging.Formatter):
 
     def format(self, record):
 
-
-
-        message = super().format(record)
-
-
-
-        # The `table` property allows for a
-        # simple, justified table to be outputted.
-
-        if hasattr(record, 'table'):
-
-            for just_key, just_value in justify([
-                (
-                    ('<' , str(key  )),
-                    (None, str(value)),
-                )
-                for key, value in record.table
-            ]):
-                message += f'\n{just_key} : {just_value}'
-
-
-
-        # The default CommandLineInterface logger's info
-        # will no be prepended with the level.
-
-        if not (
-            record.name == 'pxd_CommandLineInterface'
-            and record.levelname == 'INFO'
-        ):
-
-
-
-            # Any newlines will be indented so it'll look nice.
-
-            indent = ' ' * len(f'[{record.levelname}] ')
-
-            message = '\n'.join([
-                message.splitlines()[0],
-                *[f'{indent}{line}' for line in message.splitlines()[1:]]
-            ])
-
-
-
-            # Prepend the log level name and color based on severity.
-
-            coloring = {
-                'DEBUG'    : ANSI_FG_MAGENTA,
-                'INFO'     : ANSI_FG_CYAN,
-                'WARNING'  : ANSI_FG_YELLOW,
-                'ERROR'    : ANSI_FG_RED,
-                'CRITICAL' : ANSI_FG_RED + ANSI_BOLD,
-            }[record.levelname]
-
-            message = f'{ANSI_RESET}{coloring}[{record.levelname}]{ANSI_RESET} {message}'
-
-
-
-        # Give each log a bit of breathing room.
-
+        message  = super().format(record)
+        message  = append_log_table(message, record)
+        message  = prepend_log_level(message, record)
         message += '\n'
-
-
 
         return message
 
@@ -416,9 +411,24 @@ class CommandLineInterface:
 
 
         if logger is ...:
+
+            class CommandLineInterfaceFormatter(logging.Formatter):
+
+                def format(self, record):
+
+                    message = super().format(record)
+                    message = append_log_table(message, record)
+
+                    if record.levelname != 'INFO':
+                        message = prepend_log_level(message, record)
+
+                    message += '\n'
+
+                    return message
+
             logger         = logging.getLogger('pxd_CommandLineInterface')
             logger_handler = logging.StreamHandler(sys.stdout)
-            logger_handler.setFormatter(MainFormatter())
+            logger_handler.setFormatter(CommandLineInterfaceFormatter())
             logger.addHandler(logger_handler)
             logger.setLevel(logging.DEBUG)
 

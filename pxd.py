@@ -1597,6 +1597,30 @@ def metapreprocess(*,
 
 
 
+                        # Ensure each identifier look like an actual identifier.
+
+                        if bad := next((
+                            identifier
+                            for identifier in identifiers
+                            if identifier.name == 'Meta'
+                        ), None):
+
+                            logger.error(
+                                f'Identifier name {repr(bad.name)} cannot be used.',
+                                extra = {
+                                    'frames' : (
+                                        types.SimpleNamespace(
+                                            source_file_path = source_file_path,
+                                            line_number      = total_lines - len(remaining_lines),
+                                        ),
+                                    ),
+                                },
+                            )
+
+                            raise MetaPreprocessError
+
+
+
                         meta_directive.identifiers += identifiers
 
 
@@ -1906,7 +1930,8 @@ def metapreprocess(*,
         else:
 
             logger.error(
-                f'Could not determine the next meta-directive to evaluate; there may be a circular dependency.',
+                f'Could not determine the next meta-directive to evaluate; '
+                f'there may be a circular dependency.',
                 extra = {
                     'frames' : [
                         types.SimpleNamespace(
@@ -2006,7 +2031,6 @@ def metapreprocess(*,
 
 
     # TODO.
-
 
     class Meta:
 
@@ -2598,6 +2622,8 @@ def metapreprocess(*,
 
         def decorator(function):
 
+            meta_directive = meta_directives[meta_directive_i]
+
             nonlocal defined_identifiers
 
 
@@ -2606,7 +2632,7 @@ def metapreprocess(*,
 
             parameters = { 'Meta' : Meta } | {
                 identifier.name : defined_identifiers[identifier.name]
-                for identifier in meta_directives[meta_directive_i].identifiers
+                for identifier in meta_directive.identifiers
                 if identifier.kind in ('import', 'implicit')
             }
 
@@ -2616,7 +2642,7 @@ def metapreprocess(*,
 
             function_globals = {}
 
-            Meta.meta_directive = meta_directives[meta_directive_i]
+            Meta.meta_directive = meta_directive
             Meta.output         = ''
             Meta.indent         = 0
             Meta.within_macro   = False
@@ -2625,7 +2651,8 @@ def metapreprocess(*,
 
 
 
-            # TODO.
+            # Evaluate the meta-directive where the function's
+            # global namespace will be inspected later on.
 
             types.FunctionType(function.__code__, function_globals)(**parameters)
 
@@ -2684,6 +2711,32 @@ def metapreprocess(*,
 
                 pathlib.Path(Meta.meta_directive.include_file_path).parent.mkdir(parents = True, exist_ok = True)
                 pathlib.Path(Meta.meta_directive.include_file_path).write_text(Meta.output)
+
+
+
+            # Ensure all identifiers that are to be defined
+            # by the meta-directive are actually defined.
+
+            if undefined_identifiers := [
+                identifier
+                for identifier in meta_directive.identifiers
+                if identifier.kind in ('export', 'global')
+                if identifier.name not in function_globals
+            ]:
+
+                logger.error(
+                    f'Missing definition for {repr(undefined_identifiers[0].name)}.',
+                    extra = {
+                        'frames' : (
+                            types.SimpleNamespace(
+                                source_file_path = meta_directive.source_file_path,
+                                line_number      = undefined_identifiers[0].line_number,
+                            ),
+                        )
+                    },
+                )
+
+                raise MetaPreprocessError
 
 
 

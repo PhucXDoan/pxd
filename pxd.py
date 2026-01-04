@@ -2751,7 +2751,7 @@ def metapreprocess(*,
                     else:
 
                         frames += [types.SimpleNamespace(
-                            source_file_path = pathlib.Path(trace.filename),
+                            source_file_path = pathlib.Path(trace.filename).relative_to(pathlib.Path.cwd(), walk_up = True),
                             line_number      = trace.lineno
                         )]
 

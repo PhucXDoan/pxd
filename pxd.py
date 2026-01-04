@@ -192,7 +192,7 @@ def prepend_log_level(message, record):
     indent = ' ' * len(f'[{record.levelname}] ')
 
     message = '\n'.join([
-        message.splitlines()[0],
+        (message.splitlines() or [''])[0],
         *[f'{indent}{line}' for line in message.splitlines()[1:]]
     ])
 
@@ -1468,12 +1468,13 @@ def metapreprocess(*,
         while remaining_lines:
 
             meta_directive = types.SimpleNamespace(
-                source_file_path    = source_file_path,
-                include_file_path   = None,
-                include_line_number = None,
-                identifiers         = [],
-                body_line_number    = None,
-                body_lines          = [],
+                source_file_path         = source_file_path,
+                include_file_path        = None,
+                include_line_number      = None,
+                first_header_line_number = None,
+                identifiers              = [],
+                body_line_number         = None,
+                body_lines               = [],
             )
 
 
@@ -1522,7 +1523,10 @@ def metapreprocess(*,
                 if not meta_match:
                     break
 
-                meta_directive_found = True
+                if not meta_directive_found:
+
+                    meta_directive_found                    = True
+                    meta_directive.first_header_line_number = total_lines - len(remaining_lines)
 
 
 
@@ -1534,7 +1538,7 @@ def metapreprocess(*,
 
                     # Meta-directive header line with a list of identifiers.
 
-                    case [kind, *identifiers] if kind in ('export', 'import', 'global'):
+                    case [kind, *identifiers] if kind in (KINDS := ('export', 'import', 'global')):
 
                         identifiers, = identifiers or ['']
                         identifiers  = [
@@ -1576,7 +1580,20 @@ def metapreprocess(*,
                             for identifier in identifiers
                             if not identifier.name.isidentifier()
                         ), None):
-                            raise NotImplementedError
+
+                            logger.error(
+                                f'Failed to parse {repr(bad.name)} as an identifier.',
+                                extra = {
+                                    'frames' : (
+                                        types.SimpleNamespace(
+                                            source_file_path = source_file_path,
+                                            line_number      = total_lines - len(remaining_lines),
+                                        ),
+                                    ),
+                                },
+                            )
+
+                            raise MetaPreprocessError
 
 
 
@@ -1593,7 +1610,20 @@ def metapreprocess(*,
 
 
                     case _:
-                        raise NotImplementedError
+
+                        logger.error(
+                            f'Unknown meta-header kind {repr(kind)}; must be one of: {repr(KINDS)}.',
+                            extra = {
+                                'frames' : (
+                                    types.SimpleNamespace(
+                                        source_file_path = source_file_path,
+                                        line_number      = total_lines - len(remaining_lines),
+                                    ),
+                                ),
+                            },
+                        )
+
+                        raise MetaPreprocessError
 
 
 
@@ -1617,7 +1647,20 @@ def metapreprocess(*,
                 while True:
 
                     if not remaining_lines:
-                        raise NotImplementedError
+
+                        logger.error(
+                            f'Meta-directive body not terminated with "*/"; reached end of file.',
+                            extra = {
+                                'frames' : (
+                                    types.SimpleNamespace(
+                                        source_file_path = source_file_path,
+                                        line_number      = meta_directive.first_header_line_number,
+                                    ),
+                                ),
+                            },
+                        )
+
+                        raise MetaPreprocessError
 
                     body_line, *remaining_lines = remaining_lines
 
@@ -1649,7 +1692,20 @@ def metapreprocess(*,
                 if len(conflicts) <= 1:
                     continue
 
-                raise NotImplementedError
+                logger.error(
+                    f'Identifier {repr(name)} should not be listed multiple times.',
+                    extra = {
+                        'frames' : tuple({
+                            conflict.line_number : types.SimpleNamespace(
+                                source_file_path = source_file_path,
+                                line_number      = conflict.line_number,
+                            )
+                            for conflict in conflicts
+                        }.values())
+                    },
+                )
+
+                raise MetaPreprocessError
 
 
 
@@ -1668,14 +1724,27 @@ def metapreprocess(*,
         if len(conflicts) <= 1:
             continue
 
-        raise NotImplementedError
+        logger.error(
+            f'Multiple meta-directives use the include file path {repr(include_file_path.as_posix())}.',
+            extra = {
+                'frames' : [
+                    types.SimpleNamespace(
+                        source_file_path = conflict.source_file_path,
+                        line_number      = conflict.include_line_number,
+                    )
+                    for conflict in conflicts
+                ]
+            },
+        )
+
+        raise MetaPreprocessError
 
 
 
     # Ensure each meta-directive's exported and global identifiers are unique.
 
     for name, conflicts in coalesce(
-        (identifier.name, meta_directive)
+        (identifier.name, (identifier, meta_directive))
         for meta_directive in meta_directives
         for identifier     in meta_directive.identifiers
         if identifier.kind in ('export', 'global')
@@ -1684,7 +1753,20 @@ def metapreprocess(*,
         if len(conflicts) <= 1:
             continue
 
-        raise NotImplementedError
+        logger.error(
+            f'Multiple meta-directives cannot define the same identifier {repr(name)}.',
+            extra = {
+                'frames' : [
+                    types.SimpleNamespace(
+                        source_file_path = conflict_meta_directive.source_file_path,
+                        line_number      = conflict_identifier.line_number,
+                    )
+                    for conflict_identifier, conflict_meta_directive in conflicts
+                ]
+            },
+        )
+
+        raise MetaPreprocessError
 
 
 
@@ -1705,7 +1787,24 @@ def metapreprocess(*,
                 identifier.kind == 'import' and
                 identifier.name not in all_defined_identifier_names
             ):
-                raise NotImplementedError
+
+                logger.error(
+                    did_you_mean(
+                        'Importing identifier {}, but no meta-directive exports that.',
+                        identifier.name,
+                        all_defined_identifier_names
+                    ),
+                    extra = {
+                        'frames' : (
+                            types.SimpleNamespace(
+                                source_file_path = meta_directive.source_file_path,
+                                line_number      = identifier.line_number,
+                            ),
+                        )
+                    },
+                )
+
+                raise MetaPreprocessError
 
 
 
@@ -1806,7 +1905,21 @@ def metapreprocess(*,
 
         else:
 
-            raise NotImplementedError
+            logger.error(
+                f'Could not determine the next meta-directive to evaluate; there may be a circular dependency.',
+                extra = {
+                    'frames' : [
+                        types.SimpleNamespace(
+                            source_file_path = meta_directive.source_file_path,
+                            line_number      = meta_directive.first_header_line_number,
+                        )
+                        for meta_directive in remaining_meta_directives
+                        if any(identifier.kind != 'implicit' for identifier in meta_directive.identifiers)
+                    ]
+                },
+            )
+
+            raise MetaPreprocessError
 
 
 

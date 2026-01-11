@@ -408,7 +408,7 @@ class CommandLineInterface:
         name        = ...,
         description = ...,
         logger      = ...,
-        hook        = None,
+        hook        = ...,
     ):
 
 

@@ -3285,3 +3285,154 @@ def parse_sexp(input, mapping = default_mapping):
         raise SyntaxError(f'On line {line_number}, additional tokens were found; input should just be a single value.')
 
     return result
+
+
+
+################################################################################
+#
+# Citation checker.
+#
+
+
+
+def process_citations(file_paths, logger = ...):
+
+
+
+    if logger is ...:
+        logger = pxd_logger
+
+
+
+    # Find all citations.
+
+    all_citations = []
+
+    for file_path in file_paths:
+
+
+
+        # Skip any potentially binary files.
+
+        try:
+            file_lines = file_path.read_text().splitlines()
+        except UnicodeDecodeError:
+            continue
+
+
+
+        # Look for citations per line.
+
+        for file_line_i, file_line in enumerate(file_lines):
+
+            for citation_start_index in (m.start() for m in re.finditer('@/', file_line)):
+
+                text = file_line[citation_start_index:].removeprefix('@/')
+
+                citation = types.SimpleNamespace(
+                    file_path   = file_path,
+                    line_number = file_line_i + 1,
+                    start_index = citation_start_index,
+                    end_index   = None,
+                    file_line   = file_line,
+                    attributes  = {
+                        'pg'  : None,
+                        'sec' : None,
+                        'fig' : None,
+                        'tbl' : None,
+                    },
+                    reference_type = None,
+                    reference_text = None,
+                )
+
+
+
+                # Find attributes.
+
+                for attribute in citation.attributes:
+
+                    if re.match(f'{attribute}\\b', text):
+
+                        value, *text = text.split('/', maxsplit = 1)
+
+                        if not text:
+                            raise NotImplementedError
+
+                        text, = text
+                        value = value.removeprefix(attribute).strip()
+
+                        citation.attributes[attribute] = value
+
+
+
+                # Process attributes.
+
+                # TODO.
+
+
+
+                # Get reference prefix.
+
+                for type in (
+                    'url',
+                ):
+                    if text.startswith(prefix := f'{type}:'):
+                        text                    = text.removeprefix(prefix)
+                        citation.reference_type = type
+                        break
+
+
+
+                # Get the reference.
+
+                if not text.startswith('`'):
+                    raise NotImplementedError
+
+                text = text.removeprefix('`')
+
+                citation.reference_text, *text = text.split('`', maxsplit = 1)
+
+                if not text:
+                    raise NotImplementedError
+
+                text, = text
+
+
+
+                # Determine if it's a basic citation reference definition.
+
+                if text.lstrip().startswith(':'):
+
+                    text = text.lstrip().removeprefix(':')
+
+                    if citation.reference_type is not None:
+                        raise NotImplementedError
+
+                    citation.reference_type = ':'
+
+
+
+                citation.end_index  = len(file_line) - len(text)
+                all_citations      += [citation]
+
+
+
+    # Organize the citations.
+
+    all_citations = coalesce(
+        (citation.reference_text, citation)
+        for citation in all_citations
+    )
+
+
+
+    for citation_reference_text, citations in all_citations:
+
+        for citation in citations:
+            print(
+                f'{citation.file_line[:citation.start_index]}'
+                f'{ANSI_BG_YELLOW}{ANSI_FG_BLACK}'
+                f'{citation.file_line[citation.start_index : citation.end_index]}'
+                f'{ANSI_RESET}'
+                f'{citation.file_line[citation.end_index:]}'
+            )

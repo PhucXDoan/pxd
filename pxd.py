@@ -350,7 +350,7 @@ def execute_shell_command(
         lexer.quotes           = '"'
         lexer.whitespace_split = True
         lexer.commenters       = ''
-        commands[command_i]    = list(lexer)
+        commands[command_i]    = ' '.join(list(lexer))
 
 
 
@@ -359,8 +359,6 @@ def execute_shell_command(
     processes = []
 
     for command_i, command in enumerate(commands):
-
-        command = ' '.join(command)
 
         if logger:
             logger.info(f'$ {command}')
@@ -376,15 +374,49 @@ def execute_shell_command(
 
         else:
 
-            processes += [subprocess.Popen(command, shell = True)]
+            processes += [subprocess.Popen(
+                command,
+                shell  = True,
+                stdout = subprocess.PIPE if len(commands) >= 2 else None,
+                stderr = subprocess.PIPE if len(commands) >= 2 else None,
+            )]
 
 
 
     # Wait on each subprocess to be done.
 
+    non_zero_exit_code_found = False
+
     for process in processes:
+
         if process.wait():
-            raise ExecuteShellCommandNonZeroExitCode
+
+            non_zero_exit_code_found = True
+
+            if len(commands) >= 2:
+
+                if logger:
+                    logger.error(f'$ {command}')
+
+
+
+                # TODO Not optimal that we're using print here,
+                # but working with `subprocess.Popen`'s output
+                # is pretty tricky unfortunately, and I don't
+                # have time for it.
+
+                for line in process.stdout:
+                    print(line.decode('UTF-8'), end = '')
+
+                for line in process.stderr:
+                    print(line.decode('UTF-8'), end = '')
+
+            print()
+
+
+
+    if non_zero_exit_code_found:
+        raise ExecuteShellCommandNonZeroExitCode
 
 
 

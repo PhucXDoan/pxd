@@ -424,6 +424,13 @@ def execute_shell_command(
 #
 # Command-line interface builder.
 #
+# TODO Currently, the parsing behavior for a CLI with parameters like:
+#      > CLI paramA paramB
+#      will have the following be parsed as "correctly":
+#      > CLI paramB --paramA=X
+#      Really, it should probably be an error, because
+#      paramB is unnamed and is given first, but that should paramA.
+#
 
 
 
@@ -978,6 +985,10 @@ class CommandLineInterface:
             # We've now processed the flag argument and parameter.
 
             parameters[parameter_schema.identifier_name] = flag_value
+
+            for parameter_schema_i, parameter_schema in enumerate(remaining_parameter_schemas):
+                if parameter_schema.flag_name == flag_name:
+                    break
 
             del remaining_parameter_schemas[parameter_schema_i]
 

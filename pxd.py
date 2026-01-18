@@ -3295,7 +3295,19 @@ def parse_sexp(input, mapping = default_mapping):
 
 
 
-def process_citations(file_paths, logger = pxd_logger):
+def process_citations(
+    *,
+    file_paths,
+    reference_text_to_find     = None,
+    replacement_reference_text = None,
+    logger                     = pxd_logger
+):
+
+
+
+    if replacement_reference_text is not None and reference_text_to_find is None:
+        logger.error(f'Cannot replace references without first providing the original reference.')
+        sys.exit(1)
 
 
 
@@ -3341,19 +3353,21 @@ def process_citations(file_paths, logger = pxd_logger):
             text = file_line[start_index:].removeprefix('@/')
 
             citation = types.SimpleNamespace(
-                file_path   = file_path,
-                line_number = file_line_i + 1,
-                start_index = start_index,
-                end_index   = len(file_line),
-                file_line   = file_line,
-                attributes  = {
+                file_path         = file_path,
+                line_number       = file_line_i + 1,
+                whole_start_index = start_index,
+                whole_end_index   = len(file_line),
+                file_line         = file_line,
+                attributes        = {
                     'pg'  : None,
                     'sec' : None,
                     'fig' : None,
                     'tbl' : None,
                 },
-                reference_type = None,
-                reference_text = None,
+                reference_type        = None,
+                reference_text        = None,
+                reference_start_index = None,
+                reference_end_index   = None,
             )
 
 
@@ -3404,6 +3418,7 @@ def process_citations(file_paths, logger = pxd_logger):
 
             text = text.removeprefix('`')
 
+            citation.reference_start_index = len(file_line) - len(text)
             citation.reference_text, *text = text.split('`', maxsplit = 1)
 
             if not text:
@@ -3415,7 +3430,8 @@ def process_citations(file_paths, logger = pxd_logger):
 
             text, = text
 
-            citation.reference_text = citation.reference_text.strip()
+            citation.reference_end_index = citation.reference_start_index + len(citation.reference_text)
+            citation.reference_text      = citation.reference_text.strip()
 
 
 
@@ -3437,7 +3453,7 @@ def process_citations(file_paths, logger = pxd_logger):
 
 
 
-            citation.end_index = len(file_line) - len(text)
+            citation.whole_end_index = len(file_line) - len(text)
 
 
 
@@ -3507,8 +3523,7 @@ def process_citations(file_paths, logger = pxd_logger):
 
     # Organize the citations.
 
-    total_citations = len(all_citations)
-    all_citations   = coalesce(
+    citations_by_reference = coalesce(
         (citation.reference_text, citation)
         for citation in sorted(
             all_citations,
@@ -3522,7 +3537,7 @@ def process_citations(file_paths, logger = pxd_logger):
 
     # Find additional issues between citations.
 
-    for citation_reference_text, citations in all_citations:
+    for citation_reference_text, citations in citations_by_reference:
 
 
 
@@ -3586,17 +3601,24 @@ def process_citations(file_paths, logger = pxd_logger):
 
     # Display the table of all citations found.
 
-    def format_citation(just_file_path, just_line_number, citation, coloring):
+    def format_citation(just_file_path, just_line_number, citation, coloring, *, color_reference = False):
+
+        if color_reference:
+            start_index = citation.reference_start_index
+            end_index   = citation.reference_end_index
+        else:
+            start_index = citation.whole_start_index
+            end_index   = citation.whole_end_index
 
         return '[{} : {}]    {}'.format(
             just_file_path,
             just_line_number,
             (
-                f'{citation.file_line[:citation.start_index]}'
+                f'{citation.file_line[:start_index]}'
                 f'{coloring}'
-                f'{citation.file_line[citation.start_index : citation.end_index]}'
+                f'{citation.file_line[start_index : end_index]}'
                 f'{ANSI_RESET}'
-                f'{citation.file_line[citation.end_index:]}'
+                f'{citation.file_line[end_index:]}'
             ).strip(),
         )
 
@@ -3608,28 +3630,64 @@ def process_citations(file_paths, logger = pxd_logger):
             ('<' , citation.file_path.as_posix()),
             ('<' , citation.line_number         ),
         )
-        for citation_reference_text, citations in all_citations
+        for citation_reference_text, citations in citations_by_reference
         for citation in sorted(
             citations,
             key = lambda citation: (
                 citation.reference_type is None
             )
         )
+        if reference_text_to_find is None or citation_reference_text == reference_text_to_find
     ):
         citation_table_output += format_citation(
             just_file_path,
             just_line_number,
             citation,
-            {
-                'url' : f'{ANSI_BG_CYAN}{ANSI_FG_BLACK}',
-                ':'   : f'{ANSI_BG_GREEN}{ANSI_FG_BLACK}',
-                None  : f'{ANSI_FG_GREEN}',
-            }[citation.reference_type],
+            (
+                {
+                    'url' : f'{ANSI_BG_CYAN}{ANSI_FG_BLACK}',
+                    ':'   : f'{ANSI_BG_GREEN}{ANSI_FG_BLACK}',
+                    None  : f'{ANSI_FG_GREEN}',
+                }[citation.reference_type]
+                if reference_text_to_find is None else
+                ANSI_BG_MAGENTA
+            ),
+            color_reference = reference_text_to_find is not None
         ) + '\n'
 
-    logger.info(citation_table_output)
+    if citation_table_output:
+        logger.info(citation_table_output)
 
-    logger.info(f'Found {total_citations} citations and {len(all_citations)} unique references.')
+
+
+    # Report basic statistics.
+
+    relevant_citation_count = sum(
+        reference_text_to_find is None or citation.reference_text == reference_text_to_find
+        for citation in all_citations
+    )
+
+    if reference_text_to_find is None:
+
+        logger.info('Found {} citations and {} unique references.'.format(
+            relevant_citation_count,
+            len(citations_by_reference),
+        ))
+
+    elif relevant_citation_count:
+
+        logger.info('Found {} citations with reference of {}.'.format(
+            relevant_citation_count,
+            repr(reference_text_to_find)
+        ))
+
+    else:
+
+        logger.info(did_you_mean(
+            'No citation has reference of {}.',
+            reference_text_to_find,
+            dict(citations_by_reference).keys(),
+        ))
 
 
 
@@ -3658,3 +3716,66 @@ def process_citations(file_paths, logger = pxd_logger):
             f'{issue.reason}' '\n'
             f'{context}'
         )
+
+
+
+    # Determine if we should do reference replacement.
+
+    if replacement_reference_text is None:
+        return
+
+    if not relevant_citation_count:
+        logger.warning('No citation to do replacement with.')
+        return
+
+    if replacement_reference_text in dict(citations_by_reference):
+        logger.warning(f'Reference {repr(replacement_reference_text)} already exists.')
+
+    logger.warning(
+        f"Enter 'yes' to replace the {repr(reference_text_to_find)} with {repr(replacement_reference_text)}; "
+        f"otherwise abort."
+    )
+
+    try:
+        response = input()
+    except KeyboardInterrupt:
+        response = None
+
+    if response != 'yes':
+        logger.error(f'Aborted the renaming.')
+        return
+
+
+
+    # Replace all matching citations with a new reference.
+
+    for file_path, citations in coalesce(
+        (citation.file_path, citation)
+        for citation in all_citations
+        if citation.reference_text == reference_text_to_find
+    ):
+
+        # Being aware of line-ending convention.
+
+        file_lines = file_path.read_text().splitlines(keepends = True)
+
+
+
+        # References are replaced in a line going from right-to-left
+        # so multiple citations on the same line will work out.
+
+        for citation in sorted(
+            citations,
+            key = lambda citation: (citation.line_number, -citation.reference_start_index)
+        ):
+            file_lines[citation.line_number - 1] = (
+                file_lines[citation.line_number - 1][:citation.reference_start_index] +
+                replacement_reference_text                                            +
+                file_lines[citation.line_number - 1][citation.reference_end_index:]
+            )
+
+
+
+        # Update the file while preserving line-endings.
+
+        file_path.write_text(''.join(file_lines))

@@ -387,7 +387,7 @@ def execute_shell_command(
 
     non_zero_exit_code_found = False
 
-    for process in processes:
+    for process_i, process in enumerate(processes):
 
         if process.wait():
 
@@ -396,7 +396,7 @@ def execute_shell_command(
             if len(commands) >= 2:
 
                 if logger:
-                    logger.error(f'$ {command}')
+                    logger.error(f'$ {commands[process_i]}')
 
 
 

@@ -2157,12 +2157,6 @@ def metapreprocess(*,
 
     class Meta:
 
-        output         = ''
-        indent         = 0
-        within_macro   = False
-        overloads      = {}
-        section_stack  = []
-
 
 
         # Helper routine to output lines.

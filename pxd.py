@@ -2621,6 +2621,11 @@ def metapreprocess(*,
 
             # Determine the type of each member.
 
+            row_indexing_justification = max(
+                len(c_repr(row_indexing)) if row_indexing is not None else 0
+                for row_indexing, *members in table_rows
+            )
+
             for table_row_i, (row_indexing, *members) in enumerate(table_rows):
 
                 for member_i, member in enumerate(members):
@@ -2659,7 +2664,10 @@ def metapreprocess(*,
 
 
 
-                table_rows[table_row_i] = [row_indexing, members]
+                table_rows[table_row_i] = [
+                    c_repr(row_indexing).ljust(row_indexing_justification) if row_indexing is not None else None,
+                    members
+                ]
 
 
 
